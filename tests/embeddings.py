@@ -1,7 +1,6 @@
-import pytest
 import numpy as np
 import torch
-from layers.embeddings import *
+from deepl.layers.embeddings import *
 
 
 def test_word_embeddings():

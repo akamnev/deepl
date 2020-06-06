@@ -1,7 +1,7 @@
 import os
 import torch
 import torch.nn as nn
-from utils.config import BERTConfig
+from ..utils.config import BERTConfig
 
 
 class UtilsMixin:

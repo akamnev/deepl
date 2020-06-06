@@ -1,12 +1,12 @@
 """Bidirectional Encoder Representations from Transformers"""
 import torch
 from .base import BERTBase, LMMixin
-from layers.embeddings import (AbsolutePositionEmbeddings,
-                               VectorTextFirstEmbeddings,
-                               VectorTextLastEmbeddings,
-                               VectorTextInsideEmbeddings)
-from layers.encoders import BertEncoder, LMHead, LMHeadCut
-from layers.utils import get_attention_mask
+from ..layers.embeddings import (AbsolutePositionEmbeddings,
+                                 VectorTextFirstEmbeddings,
+                                 VectorTextLastEmbeddings,
+                                 VectorTextInsideEmbeddings)
+from ..layers.encoders import BertEncoder, LMHead, LMHeadCut
+from ..layers.utils import get_attention_mask
 
 __all__ = ['BERT',
            'LanguageModel',
