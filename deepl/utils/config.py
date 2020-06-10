@@ -1,5 +1,6 @@
 import copy
 import json
+import torch
 
 
 class ConfigBase:
@@ -61,6 +62,9 @@ class BERTConfig(ConfigBase):
         self.initializer_range = initializer_range
         self.output_attentions = output_attentions
         self.output_hidden_states = output_hidden_states
+
+        if isinstance(self.device, str):
+            self.device = torch.device(self.device)
 
 
 class BERTLanguageModelConfig(BERTConfig):

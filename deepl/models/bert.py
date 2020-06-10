@@ -7,6 +7,7 @@ from ..layers.embeddings import (AbsolutePositionEmbeddings,
                                  VectorTextInsideEmbeddings)
 from ..layers.encoders import BertEncoder, LMHead, LMHeadCut
 from ..layers.utils import get_attention_mask
+from ..utils.config import BERTLanguageModelConfig, VectorTextBERTConfig
 
 __all__ = ['BERT',
            'LanguageModel',
@@ -69,6 +70,8 @@ class BERT(BERTBase):
 
 
 class LanguageModel(BERT, LMMixin):
+    config_cls = BERTLanguageModelConfig
+
     def __init__(self, config):
         super().__init__(config)
         if config.use_cut_head:
@@ -190,6 +193,8 @@ class TextVectorMax(BERT):
 
 
 class VectorText(BERTBase, LMMixin):
+    config_cls = VectorTextBERTConfig
+
     def __init__(self, config):
         super().__init__(config)
         if config.model_type == 'first':

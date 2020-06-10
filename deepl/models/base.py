@@ -14,6 +14,8 @@ class UtilsMixin:
 
 
 class BERTBase(nn.Module, UtilsMixin):
+    config_cls = BERTConfig
+
     def __init__(self, config):
         super().__init__()
         if not isinstance(config, BERTConfig):
@@ -39,12 +41,13 @@ class BERTBase(nn.Module, UtilsMixin):
         self.config.to_file(output_config_file)
 
     @classmethod
-    def load(cls, load_directory=None, model_name='model', init_weights=True):
+    def load(cls, load_directory=None, model_name='model',
+             init_weights=False, **kwargs):
         if load_directory is None:
             load_directory = os.path.curdir
         input_model_file = os.path.join(load_directory, model_name + '.bin')
         input_config_file = os.path.join(load_directory, model_name + '.json')
-        config = BERTConfig.from_file(input_config_file)
+        config = cls.config_cls.from_file(input_config_file, **kwargs)
         obj = cls(config)
         if init_weights:
             obj.init_weights()

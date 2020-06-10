@@ -52,6 +52,7 @@ def mask_token_with_unity_mlm(tokens, token_count, proba_unity, proba_token,
             v = [id_ignore] * len(s)
             num_token_to_mask = np.random.binomial(len(b), proba_token)
             num_token_to_mask = max(1, num_token_to_mask)
+            num_token_to_mask = min(num_token_to_mask, len(s))
             i_to_mask = set()
             while len(i_to_mask) < num_token_to_mask:
                 i_to_mask.add(sampler(b, c))
