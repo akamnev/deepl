@@ -280,8 +280,17 @@ class VectorText(BERTBase, LMMixin):
         sequence_output = outputs[0]
         if masked_lm_labels is not None:
             max_length = max([len(x) for x in masked_lm_labels])
-            masked_lm_labels = [x + [self.config.ignore_index] * (max_length - len(x))
-                                for x in masked_lm_labels]
+            if self.config.model_type == 'first':
+                masked_lm_labels = [
+                    [self.config.ignore_index] + x +
+                    [self.config.ignore_index] * (max_length - len(x))
+                    for x in masked_lm_labels
+                ]
+            else:
+                masked_lm_labels = [
+                    x + [self.config.ignore_index] * (max_length - len(x))
+                    for x in masked_lm_labels
+                ]
             masked_lm_labels = torch.tensor(masked_lm_labels,
                                             dtype=torch.long,
                                             device=self.config.device)
