@@ -66,6 +66,11 @@ class BERTConfig(ConfigBase):
         if isinstance(self.device, str):
             self.device = torch.device(self.device)
 
+    def to_dict(self):
+        output = super().to_dict()
+        output['device'] = str(output['device'])
+        return output
+
 
 class BERTLanguageModelConfig(BERTConfig):
     def __init__(self,
