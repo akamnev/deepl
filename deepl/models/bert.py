@@ -41,13 +41,6 @@ class BERT(BERTBase):
                                    config.output_attentions,
                                    config.output_hidden_states)
 
-    def _init_weights(self, module):
-        if isinstance(module, (torch.nn.Linear, torch.nn.Embedding)):
-            module.weight.data.normal_(mean=0.0,
-                                       std=self.config.initializer_range)
-        if isinstance(module, torch.nn.Linear) and module.bias is not None:
-            module.bias.data.zero_()
-
     def forward(self,
                 input_ids,
                 attention_mask=None,
