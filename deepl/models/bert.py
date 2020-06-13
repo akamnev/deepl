@@ -7,13 +7,17 @@ from ..layers.embeddings import (AbsolutePositionEmbeddings,
                                  VectorTextInsideEmbeddings)
 from ..layers.encoders import BertEncoder, LMHead, LMHeadCut
 from ..layers.utils import get_attention_mask
-from ..utils.config import BERTLanguageModelConfig, VectorTextBERTConfig
+from ..utils.config import (BERTLanguageModelConfig,
+                            VectorTextBERTConfig,
+                            TextVectorVAEConfig)
+from ..layers.vae import VAENormalTanhAbs
 
 __all__ = ['BERT',
            'LanguageModel',
            'TextVectorMean',
            'TextVectorMax',
-           'VectorText']
+           'VectorText',
+           'TextVectorMeanVAE']
 
 
 class BERT(BERTBase):
@@ -305,4 +309,32 @@ class VectorText(BERTBase, LMMixin):
             )
             outputs = (masked_lm_loss,) + outputs
 
+        return outputs
+
+
+class TextVectorMeanVAE(TextVectorMean):
+    config_cls = TextVectorVAEConfig
+
+    def __init__(self, config):
+        super().__init__(config)
+        if config.vae_type == 'normal_tanh_abs':
+            self.vae_head = VAENormalTanhAbs(config.hidden_size)
+        else:
+            raise ValueError(f'{config.vae_type} not recognized. `vae_type`'
+                             f' should be set to either `normal_tanh_abs`')
+
+    def forward(self,
+                input_ids,
+                attention_mask=None,
+                head_mask=None,
+                encoder_hidden_states=None,
+                encoder_attention_mask=None):
+        outputs = super().forward(input_ids=input_ids,
+                                  attention_mask=attention_mask,
+                                  head_mask=head_mask,
+                                  encoder_hidden_states=encoder_hidden_states,
+                                  encoder_attention_mask=encoder_attention_mask)
+        vectors = outputs[0]
+        statistics = self.vae_head(vectors)
+        outputs = (statistics, ) + outputs[1:]
         return outputs

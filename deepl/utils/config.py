@@ -147,3 +147,39 @@ class VectorTextBERTConfig(BERTLanguageModelConfig):
                          output_attentions,
                          output_hidden_states)
         self.model_type = model_type
+
+
+class TextVectorVAEConfig(BERTConfig):
+    def __init__(self,
+                 num_hidden_layers,
+                 num_attention_heads,
+                 hidden_size,
+                 intermediate_size,
+                 vocab_size,
+                 max_position_embedding,
+                 device='cpu',
+                 dropout_prob=0.1,
+                 layer_norm_eps=1e-12,
+                 is_decoder=False,
+                 padding_idx=0,
+                 hidden_act='gelu',
+                 initializer_range=0.02,
+                 vae_type=None,
+                 output_attentions=False,
+                 output_hidden_states=False):
+        super().__init__(num_hidden_layers,
+                         num_attention_heads,
+                         hidden_size,
+                         intermediate_size,
+                         vocab_size,
+                         max_position_embedding,
+                         device,
+                         dropout_prob,
+                         layer_norm_eps,
+                         is_decoder,
+                         padding_idx,
+                         hidden_act,
+                         initializer_range,
+                         output_attentions,
+                         output_hidden_states)
+        self.vae_type = vae_type
