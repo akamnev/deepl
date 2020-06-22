@@ -18,7 +18,7 @@ class BERTBase(nn.Module, UtilsMixin):
 
     def __init__(self, config):
         super().__init__()
-        if not isinstance(config, BERTConfig):
+        if not isinstance(config, self.config_cls):
             raise ValueError(
                 f'Parameter config in `{self.__class__.__name__}(config)` '
                 f'should be an instance of class `BERTConfig`.'
