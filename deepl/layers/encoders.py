@@ -25,12 +25,21 @@ class BertSelfAttention(nn.Module):
         self.key = nn.Linear(hidden_size, self.all_head_size)
         self.value = nn.Linear(hidden_size, self.all_head_size)
 
-        self.dropout = nn.Dropout(dropout_prob)
+        self.dropout_prob = dropout_prob
 
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
+
+    def dropout_attention_scores(self, scores):
+        if self.training:
+            mask = torch.ones(scores.shape) * self.dropout_prob
+            mask = torch.bernoulli(mask)
+            mask = torch.as_tensor(mask, dtype=scores.dtype,
+                                   device=scores.device)
+            scores = scores + mask * self.get_min_value(scores.dtype)
+        return scores
 
     def forward(
         self,
@@ -63,23 +72,13 @@ class BertSelfAttention(nn.Module):
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         if attention_mask is not None:
             extended_attention_mask = 1.0 - attention_mask[:, None, None, :]
-            if extended_attention_mask.dtype == torch.float16:
-                extended_attention_mask *= -1e4
-            elif extended_attention_mask.dtype == torch.float32:
-                extended_attention_mask *= -1e9
-            else:
-                raise ValueError("{} not recognized. `dtype` "
-                                 "should be set to either `torch.float32` "
-                                 "or `torch.float16`".format(
-                                    extended_attention_mask.dtype))
+            extended_attention_mask *= self.get_min_value(
+                extended_attention_mask.dtype)
 
             attention_scores = attention_scores + extended_attention_mask
 
+        attention_scores = self.dropout_attention_scores(attention_scores)
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
-
-        # This is actually dropping out entire tokens to attend to, which might
-        # seem a bit unusual, but is taken from the original Transformer paper.
-        attention_probs = self.dropout(attention_probs)
 
         # Mask heads if we want to
         if head_mask is not None:
@@ -94,6 +93,18 @@ class BertSelfAttention(nn.Module):
         outputs = (context_layer, attention_probs) if self.output_attentions \
             else (context_layer,)
         return outputs
+
+    @staticmethod
+    def get_min_value(dtype):
+        if dtype == torch.float16:
+            min_value = -1e4
+        elif dtype == torch.float32:
+            min_value = -1e9
+        else:
+            raise ValueError("{} not recognized. `dtype` "
+                             "should be set to either `torch.float32` "
+                             "or `torch.float16`".format(dtype))
+        return min_value
 
 
 class BertSelfOutput(nn.Module):
