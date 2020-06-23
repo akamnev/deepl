@@ -34,10 +34,9 @@ class BertSelfAttention(nn.Module):
 
     def dropout_attention_scores(self, scores):
         if self.training:
-            mask = torch.ones(scores.shape) * self.dropout_prob
+            mask = torch.ones(scores.shape, dtype=scores.dtype,
+                              device=scores.device) * self.dropout_prob
             mask = torch.bernoulli(mask)
-            mask = torch.as_tensor(mask, dtype=scores.dtype,
-                                   device=scores.device)
             scores = scores + mask * self.get_min_value(scores.dtype)
         return scores
 
