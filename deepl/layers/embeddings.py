@@ -143,6 +143,7 @@ class VectorTextInsideEmbeddings(AbsolutePositionEmbeddingsBase):
         position_ids = []
         inputs_embeds = []
         for n, (seq, pos) in enumerate(zip(input_ids, input_pos)):
+            pos.sort()
             position_ids.append(
                 list(range(self.padding_idx + 1,
                            len(seq) + self.padding_idx + 1))

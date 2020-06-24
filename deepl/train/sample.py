@@ -42,12 +42,13 @@ def mask_token(tokens, token_count, id_mask, id_ignore,
 
 def mask_token_with_unity_mlm(tokens, token_count, proba_unity, proba_token,
                               id_mask, id_ignore, sampler=random_token_sample):
-    sequence, labels = [], []
+    sequence, labels, masked_pos = [], [], []
     for b, c in zip(tokens, token_count):
         s = b[:]
         u = np.random.uniform()
         if u < proba_unity:
             v = s[:]
+            i_to_mask = set()
         else:
             v = [id_ignore] * len(s)
             num_token_to_mask = np.random.binomial(len(b), proba_token)
@@ -61,7 +62,8 @@ def mask_token_with_unity_mlm(tokens, token_count, proba_unity, proba_token,
                 s[i] = id_mask
         sequence.append(s)
         labels.append(v)
-    return sequence, labels
+        masked_pos.append(list(i_to_mask))
+    return sequence, labels, masked_pos
 
 
 def mask_token_with_unity_lm(tokens, token_count, proba_unity,
