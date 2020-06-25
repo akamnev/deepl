@@ -7,9 +7,9 @@ from ..layers.embeddings import (AbsolutePositionEmbeddings,
                                  VectorTextInsideEmbeddings)
 from ..layers.encoders import BertEncoder, LMHead, LMHeadCut
 from ..layers.utils import get_attention_mask
-from ..utils.config import (BERTLanguageModelConfig,
-                            VectorTextBERTConfig,
-                            TextVectorVAEConfig)
+from .config import (BERTLanguageModelConfig,
+                     VectorTextBERTConfig,
+                     TextVectorVAEConfig)
 from ..layers.vae import VAENormalTanhAbs
 
 __all__ = ['BERT',
