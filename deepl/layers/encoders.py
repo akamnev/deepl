@@ -278,20 +278,37 @@ class BertEncoder(nn.Module):
                  dropout_prob=0.1,
                  hidden_act='gelu',
                  layer_norm_eps=1e-12,
+                 cross_layer_parameter_sharing=None,
                  output_attentions=False,
                  output_hidden_states=False):
         super().__init__()
         self.output_attentions = output_attentions
         self.output_hidden_states = output_hidden_states
-        self.layer = nn.ModuleList([BertLayer(hidden_size,
-                                              num_attention_heads,
-                                              intermediate_size,
-                                              is_decoder,
-                                              dropout_prob,
-                                              hidden_act,
-                                              layer_norm_eps,
-                                              output_attentions)
-                                    for _ in range(num_hidden_layers)])
+        if cross_layer_parameter_sharing is None:
+            self.layer = nn.ModuleList([BertLayer(hidden_size,
+                                                  num_attention_heads,
+                                                  intermediate_size,
+                                                  is_decoder,
+                                                  dropout_prob,
+                                                  hidden_act,
+                                                  layer_norm_eps,
+                                                  output_attentions)
+                                        for _ in range(num_hidden_layers)])
+        elif cross_layer_parameter_sharing == 'all_parameters_sharing':
+            self.single_layer = BertLayer(hidden_size,
+                                          num_attention_heads,
+                                          intermediate_size,
+                                          is_decoder,
+                                          dropout_prob,
+                                          hidden_act,
+                                          layer_norm_eps,
+                                          output_attentions)
+            self.layer = [self.single_layer for _ in range(num_hidden_layers)]
+        else:
+            raise ValueError(f'{cross_layer_parameter_sharing} not recognized.'
+                             f' `cross_layer_parameter_sharing` '
+                             f' should be set to either `None`,'
+                             f' `all_parameters_sharing`.')
 
     def forward(
         self,

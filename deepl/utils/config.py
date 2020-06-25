@@ -45,6 +45,7 @@ class BERTConfig(ConfigBase):
                  padding_idx=0,
                  hidden_act='gelu',
                  initializer_range=0.02,
+                 cross_layer_parameter_sharing=None,
                  output_attentions=False,
                  output_hidden_states=False):
         self.num_hidden_layers = num_hidden_layers
@@ -60,6 +61,7 @@ class BERTConfig(ConfigBase):
         self.padding_idx = padding_idx
         self.hidden_act = hidden_act
         self.initializer_range = initializer_range
+        self.cross_layer_parameter_sharing = cross_layer_parameter_sharing
         self.output_attentions = output_attentions
         self.output_hidden_states = output_hidden_states
 
@@ -87,6 +89,7 @@ class BERTLanguageModelConfig(BERTConfig):
                  padding_idx=0,
                  hidden_act='gelu',
                  initializer_range=0.02,
+                 cross_layer_parameter_sharing=None,
                  use_cut_head=True,
                  ignore_index=-100,
                  tie_embedding_vectors=True,
@@ -105,6 +108,7 @@ class BERTLanguageModelConfig(BERTConfig):
                          padding_idx,
                          hidden_act,
                          initializer_range,
+                         cross_layer_parameter_sharing,
                          output_attentions,
                          output_hidden_states)
         self.use_cut_head = use_cut_head
@@ -128,6 +132,7 @@ class VectorTextBERTConfig(BERTLanguageModelConfig):
                  padding_idx=0,
                  hidden_act='gelu',
                  initializer_range=0.02,
+                 cross_layer_parameter_sharing=None,
                  use_cut_head=True,
                  ignore_index=-100,
                  tie_embedding_vectors=True,
@@ -146,6 +151,7 @@ class VectorTextBERTConfig(BERTLanguageModelConfig):
                          padding_idx,
                          hidden_act,
                          initializer_range,
+                         cross_layer_parameter_sharing,
                          use_cut_head,
                          ignore_index,
                          tie_embedding_vectors,
@@ -169,6 +175,7 @@ class TextVectorVAEConfig(BERTConfig):
                  padding_idx=0,
                  hidden_act='gelu',
                  initializer_range=0.02,
+                 cross_layer_parameter_sharing=None,
                  vae_type=None,
                  output_attentions=False,
                  output_hidden_states=False):
@@ -185,6 +192,7 @@ class TextVectorVAEConfig(BERTConfig):
                          padding_idx,
                          hidden_act,
                          initializer_range,
+                         cross_layer_parameter_sharing,
                          output_attentions,
                          output_hidden_states)
         self.vae_type = vae_type

@@ -38,6 +38,7 @@ class BERT(BERTBase):
                                    config.dropout_prob,
                                    config.hidden_act,
                                    config.layer_norm_eps,
+                                   config.cross_layer_parameter_sharing,
                                    config.output_attentions,
                                    config.output_hidden_states)
 
@@ -286,6 +287,8 @@ class VectorText(BERTBase, LMMixin):
                     [self.config.ignore_index] * (max_length - len(x))
                     for x in masked_lm_labels
                 ]
+            elif self.config.model_type == 'last':
+                raise NotImplementedError
             else:
                 masked_lm_labels = [
                     x + [self.config.ignore_index] * (max_length - len(x))
