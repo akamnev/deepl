@@ -221,6 +221,7 @@ class VectorText(BERTBase, LMMixin):
                                    config.dropout_prob,
                                    config.hidden_act,
                                    config.layer_norm_eps,
+                                   config.cross_layer_parameter_sharing,
                                    config.output_attentions,
                                    config.output_hidden_states)
         if config.use_cut_head:
