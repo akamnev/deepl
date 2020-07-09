@@ -303,12 +303,13 @@ class BertEncoder(nn.Module):
                                           hidden_act,
                                           layer_norm_eps,
                                           output_attentions)
-            self.layer = [self.single_layer for _ in range(num_hidden_layers)]
         else:
             raise ValueError(f'{cross_layer_parameter_sharing} not recognized.'
                              f' `cross_layer_parameter_sharing` '
                              f' should be set to either `None`,'
                              f' `all_parameters_sharing`.')
+        self.num_hidden_layers = num_hidden_layers
+        self.cross_layer_parameter_sharing = cross_layer_parameter_sharing
 
     def forward(
         self,
@@ -320,7 +321,12 @@ class BertEncoder(nn.Module):
     ):
         all_hidden_states = ()
         all_attentions = ()
-        for i, layer_module in enumerate(self.layer):
+        for i in range(self.num_hidden_layers):
+            if self.cross_layer_parameter_sharing is None:
+                layer_module = self.layer[i]
+            else:
+                layer_module = self.single_layer
+
             if self.output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
 

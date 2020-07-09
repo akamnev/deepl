@@ -59,7 +59,6 @@ class BERTBase(nn.Module, UtilsMixin):
         if init_weights:
             obj.init_weights()
         obj.load_state_dict(torch.load(input_model_file, map_location='cpu'))
-        obj.to(config.device)
         return obj
 
 
