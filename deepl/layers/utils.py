@@ -44,3 +44,12 @@ def get_attention_mask(input_ids):
     attention_mask = [[1.0] * len(x) + [0.0] * (max_length - len(x))
                       for x in input_ids]
     return attention_mask
+
+
+def prune_input_sequence(input_ids, max_length):
+    fval = []
+    for ids in input_ids:
+        if len(ids) > max_length:
+            ids = ids[:max_length]
+        fval.append(ids)
+    return fval

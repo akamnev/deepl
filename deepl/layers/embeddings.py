@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from .utils import prune_input_sequence
 
 __all__ = [
     'WordEmbeddings',
@@ -16,7 +17,8 @@ class WordEmbeddings(nn.Module):
                  layer_norm_eps=1e-12, dropout_prob=0.1):
         super().__init__()
         self.padding_idx = padding_idx
-        self.device = device
+        self.device = device if isinstance(device, torch.device) \
+            else torch.device(device)
         self.word_embeddings = nn.Embedding(vocab_size,
                                             hidden_size,
                                             padding_idx=padding_idx)
@@ -41,7 +43,9 @@ class AbsolutePositionEmbeddingsBase(nn.Module):
                  dropout_prob=0.1, layer_norm_eps=1e-12):
         super().__init__()
         self.padding_idx = padding_idx
-        self.device = device
+        self.device = device if isinstance(device, torch.device) \
+            else torch.device(device)
+        self.max_position_embedding = max_position_embedding
         max_position_embedding += padding_idx + 1
         self.word_embeddings = nn.Embedding(vocab_size,
                                             hidden_size,
@@ -55,6 +59,7 @@ class AbsolutePositionEmbeddingsBase(nn.Module):
 
 class AbsolutePositionEmbeddings(AbsolutePositionEmbeddingsBase):
     def forward(self, input_ids):
+        input_ids = prune_input_sequence(input_ids, self.max_position_embedding)
         max_length = max([len(x) for x in input_ids])
         position_ids = [[xi for xi in range(self.padding_idx + 1,
                                             len(x) + self.padding_idx + 1)]
@@ -78,6 +83,8 @@ class AbsolutePositionEmbeddings(AbsolutePositionEmbeddingsBase):
 class VectorTextFirstEmbeddings(AbsolutePositionEmbeddingsBase):
     """Add the text's vector to the first token"""
     def forward(self, input_ids, vectors):
+        input_ids = prune_input_sequence(input_ids,
+                                         self.max_position_embedding - 1)
         max_length = max([len(x) for x in input_ids])
         position_ids = [[xi for xi in range(self.padding_idx + 1,
                                             len(x) + self.padding_idx + 2)]
@@ -107,6 +114,8 @@ class VectorTextFirstEmbeddings(AbsolutePositionEmbeddingsBase):
 class VectorTextLastEmbeddings(AbsolutePositionEmbeddingsBase):
     """Add the text's vector to the last token"""
     def forward(self, input_ids, vectors):
+        input_ids = prune_input_sequence(input_ids,
+                                         self.max_position_embedding - 1)
         max_length = max([len(x) for x in input_ids]) + 1
         position_ids = []
         inputs_embeds = []
@@ -139,6 +148,7 @@ class VectorTextLastEmbeddings(AbsolutePositionEmbeddingsBase):
 
 class VectorTextInsideEmbeddings(AbsolutePositionEmbeddingsBase):
     def forward(self, input_ids, input_pos, vectors):
+        input_ids = prune_input_sequence(input_ids, self.max_position_embedding)
         max_length = max([len(x) for x in input_ids])
         position_ids = []
         inputs_embeds = []
