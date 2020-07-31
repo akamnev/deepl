@@ -31,7 +31,7 @@ class VAEType(IntEnumBase):
     NORMAL_TANH_ABS = auto()
 
 
-class ConfigBase:
+class ConfigBase(torch.nn.Module):
     def to_dict(self):
         output = copy.deepcopy(self.__dict__)
         return output
@@ -76,6 +76,7 @@ class BERTConfig(ConfigBase):
                  cross_layer_parameter_sharing=PSS.NO_PARAMETERS_SHARING,
                  output_attentions=False,
                  output_hidden_states=False):
+        super().__init__()
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         self.hidden_size = hidden_size

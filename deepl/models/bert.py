@@ -1,5 +1,6 @@
 """Bidirectional Encoder Representations from Transformers"""
 import torch
+from typing import List, Optional
 from .base import BERTBase, LMMixin
 from ..layers.embeddings import (AbsolutePositionEmbeddings,
                                  VectorTextFirstEmbeddings,
@@ -44,10 +45,20 @@ class BERT(BERTBase):
                                    config.output_hidden_states)
 
     def forward(self,
-                input_ids,
-                attention_mask=None,
-                encoder_hidden_states=None,
-                encoder_attention_mask=None):
+                input_ids: List[List[int]],
+                attention_mask: Optional[List[List[float]]] = None,
+                encoder_hidden_states: Optional[torch.Tensor] = None,
+                encoder_attention_mask: Optional[torch.Tensor] = None):
+        return self.forward_impl(input_ids=input_ids,
+                                 attention_mask=attention_mask,
+                                 encoder_hidden_states=encoder_hidden_states,
+                                 encoder_attention_mask=encoder_attention_mask)
+
+    def forward_impl(self,
+                input_ids: List[List[int]],
+                attention_mask: Optional[List[List[float]]] = None,
+                encoder_hidden_states: Optional[torch.Tensor] = None,
+                encoder_attention_mask: Optional[torch.Tensor] = None):
 
         hidden_states = self.embedding(input_ids)
 
@@ -129,12 +140,11 @@ class LanguageModel(BERT, LMMixin):
 
 class TextVectorMean(BERT):
     def forward(self,
-                input_ids,
-                attention_mask=None,
-                encoder_hidden_states=None,
-                encoder_attention_mask=None,
-                eps=1e-8):
-        outputs = super().forward(input_ids=input_ids,
+                input_ids: List[List[int]],
+                attention_mask: Optional[List[List[float]]] = None,
+                encoder_hidden_states: Optional[torch.Tensor] = None,
+                encoder_attention_mask: Optional[torch.Tensor] = None):
+        outputs = self.forward_impl(input_ids=input_ids,
                                   attention_mask=attention_mask,
                                   encoder_hidden_states=encoder_hidden_states,
                                   encoder_attention_mask=encoder_attention_mask)

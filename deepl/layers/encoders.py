@@ -1,6 +1,7 @@
 import math
 import torch
 import torch.nn as nn
+from typing import Optional, List
 
 from .activations import gelu, ACT2FN
 from .utils import get_min_value, prune_linear_layer
@@ -46,9 +47,9 @@ class BertSelfAttention(nn.Module):
     def forward(
         self,
         hidden_states,
-        attention_mask=None,
-        encoder_hidden_states=None,
-        encoder_attention_mask=None
+        attention_mask: Optional[torch.Tensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.Tensor] = None
     ):
         mixed_query_layer = self.query(hidden_states)
 
@@ -152,9 +153,9 @@ class BertAttention(nn.Module):
     def forward(
         self,
         hidden_states,
-        attention_mask=None,
-        encoder_hidden_states=None,
-        encoder_attention_mask=None
+        attention_mask: Optional[torch.Tensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.Tensor] = None
     ):
         self_outputs = self.self(hidden_states,
                                  attention_mask,
@@ -227,22 +228,22 @@ class BertLayer(nn.Module):
     def forward(
         self,
         hidden_states,
-        attention_mask=None,
-        encoder_hidden_states=None,
-        encoder_attention_mask=None
+        attention_mask: Optional[torch.Tensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.Tensor] = None
     ):
         self_attention_outputs = self.attention(hidden_states, attention_mask)
         attention_output = self_attention_outputs[0]
         outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
 
-        if self.is_decoder and encoder_hidden_states is not None:
-            cross_attention_outputs = self.cross_attention(attention_output,
-                                                           attention_mask,
-                                                           encoder_hidden_states,
-                                                           encoder_attention_mask
-                                                           )
-            attention_output = cross_attention_outputs[0]
-            outputs = outputs + cross_attention_outputs[1:]  # add cross attentions if we output attention weights
+        # if self.is_decoder and encoder_hidden_states is not None:
+        #     cross_attention_outputs = self.cross_attention(attention_output,
+        #                                                    attention_mask,
+        #                                                    encoder_hidden_states,
+        #                                                    encoder_attention_mask
+        #                                                    )
+        #     attention_output = cross_attention_outputs[0]
+        #     outputs = outputs + cross_attention_outputs[1:]  # add cross attentions if we output attention weights
 
         intermediate_output = self.intermediate(attention_output)
         layer_output = self.output(intermediate_output, attention_output)
@@ -296,9 +297,9 @@ class BertEncoder(nn.Module):
     def forward(
         self,
         hidden_states,
-        attention_mask=None,
-        encoder_hidden_states=None,
-        encoder_attention_mask=None
+        attention_mask: Optional[torch.Tensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.Tensor] = None
     ):
         all_hidden_states = []
         all_attentions = []

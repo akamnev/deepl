@@ -1,3 +1,4 @@
+from typing import List
 import torch
 import torch.nn as nn
 from .utils import prune_input_sequence
@@ -25,7 +26,7 @@ class WordEmbeddings(nn.Module):
         self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
         self.dropout = nn.Dropout(dropout_prob)
 
-    def forward(self, input_ids):
+    def forward(self, input_ids: List[List[int]]):
         max_length = max([len(x) for x in input_ids])
         input_ids = [x + [self.padding_idx] * (max_length - len(x))
                      for x in input_ids]
@@ -58,7 +59,7 @@ class AbsolutePositionEmbeddingsBase(nn.Module):
 
 
 class AbsolutePositionEmbeddings(AbsolutePositionEmbeddingsBase):
-    def forward(self, input_ids):
+    def forward(self, input_ids: List[List[int]]):
         input_ids = prune_input_sequence(input_ids, self.max_position_embedding)
         max_length = max([len(x) for x in input_ids])
         position_ids = [[xi for xi in range(self.padding_idx + 1,
@@ -82,7 +83,7 @@ class AbsolutePositionEmbeddings(AbsolutePositionEmbeddingsBase):
 
 class VectorTextFirstEmbeddings(AbsolutePositionEmbeddingsBase):
     """Add the text's vector to the first token"""
-    def forward(self, input_ids, vectors):
+    def forward(self, input_ids: List[List[int]], vectors: torch.Tensor):
         input_ids = prune_input_sequence(input_ids,
                                          self.max_position_embedding - 1)
         max_length = max([len(x) for x in input_ids])
@@ -113,7 +114,7 @@ class VectorTextFirstEmbeddings(AbsolutePositionEmbeddingsBase):
 
 class VectorTextLastEmbeddings(AbsolutePositionEmbeddingsBase):
     """Add the text's vector to the last token"""
-    def forward(self, input_ids, vectors):
+    def forward(self, input_ids: List[List[int]], vectors: torch.Tensor):
         input_ids = prune_input_sequence(input_ids,
                                          self.max_position_embedding - 1)
         max_length = max([len(x) for x in input_ids]) + 1
@@ -147,7 +148,8 @@ class VectorTextLastEmbeddings(AbsolutePositionEmbeddingsBase):
 
 
 class VectorTextInsideEmbeddings(AbsolutePositionEmbeddingsBase):
-    def forward(self, input_ids, input_pos, vectors):
+    def forward(self, input_ids: List[List[int]], input_pos: List[List[int]],
+                vectors: torch.Tensor):
         input_ids = prune_input_sequence(input_ids, self.max_position_embedding)
         max_length = max([len(x) for x in input_ids])
         position_ids = []
