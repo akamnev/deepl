@@ -97,6 +97,137 @@ class BertSelfAttention(nn.Module):
         return outputs
 
 
+class BertSelfAttentionWithRelativePosition(nn.Module):
+    def __init__(self, hidden_size, num_attention_heads, dropout_prob=0.1,
+                 output_attentions=False):
+        super().__init__()
+        if hidden_size % num_attention_heads != 0:
+            raise ValueError(
+                "The hidden size (%d) is not a multiple of the number of attention "
+                "heads (%d)" % (hidden_size, num_attention_heads)
+            )
+        self.output_attentions = output_attentions
+
+        self.num_attention_heads = num_attention_heads
+        self.attention_head_size = int(hidden_size / num_attention_heads)
+        self.all_head_size = self.num_attention_heads * self.attention_head_size
+
+        self.query = nn.Linear(hidden_size, self.all_head_size)
+        self.key = nn.Linear(hidden_size, self.all_head_size)
+        self.value = nn.Linear(hidden_size, self.all_head_size)
+
+        self.dropout_prob = dropout_prob
+
+        # 0 for padding
+        half_width = 2
+        self.relative_pos_key = nn.Embedding(2 * half_width + 1 + 1,
+                                             self.attention_head_size)
+
+    def transpose_for_scores(self, x):
+        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+        x = x.view(*new_x_shape)
+        return x.permute(0, 2, 1, 3)
+
+    def dropout_attention_scores(self, scores):
+        if self.training:
+            mask = torch.ones(scores.shape, dtype=scores.dtype,
+                              device=scores.device) * self.dropout_prob
+            mask = torch.bernoulli(mask)
+            scores = scores + mask * self.get_min_value(scores.dtype)
+        return scores
+
+    def forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        head_mask=None,
+        encoder_hidden_states=None,
+        encoder_attention_mask=None,
+    ):
+        mixed_query_layer = self.query(hidden_states)
+
+        if encoder_hidden_states is not None:
+            mixed_key_layer = self.key(encoder_hidden_states)
+            mixed_value_layer = self.value(encoder_hidden_states)
+            attention_mask = encoder_attention_mask
+        else:
+            mixed_key_layer = self.key(hidden_states)
+            mixed_value_layer = self.value(hidden_states)
+
+        query_layer = self.transpose_for_scores(mixed_query_layer)
+        key_layer = self.transpose_for_scores(mixed_key_layer)
+        value_layer = self.transpose_for_scores(mixed_value_layer)
+
+        print(query_layer.shape)
+        n = query_layer.shape[-2]
+        half_width = 2
+        ids = []
+        for i in range(n):
+            for j in range(n):
+                idx = i - j + half_width + 1
+                if idx < 1:
+                    idx = 0
+                elif idx > 2 * half_width + 1:
+                    idx = 0
+                ids.append(idx)
+                # print(i, j, idx)
+                # print(idx)
+        device = query_layer.device
+        ids = torch.tensor(ids, dtype=torch.long, device=device)
+        print(ids)
+        pos = self.relative_pos_key(ids)
+        pos = pos.transpose(0, 1)
+
+        pos = pos.view(self.attention_head_size, n, n)
+        pos = pos.permute(1, 0, 2)
+        attention_scores_pos = torch.matmul(query_layer.unsqueeze(-2), pos)
+        attention_scores_pos = attention_scores_pos.squeeze(-2)
+
+
+        # Take the dot product between "query" and "key"
+        # to get the raw attention scores.
+        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+
+        attention_scores = attention_scores + attention_scores_pos
+
+        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+        if attention_mask is not None:
+            extended_attention_mask = 1.0 - attention_mask[:, None, None, :]
+            extended_attention_mask *= self.get_min_value(
+                extended_attention_mask.dtype)
+
+            attention_scores = attention_scores + extended_attention_mask
+
+        attention_scores = self.dropout_attention_scores(attention_scores)
+        attention_probs = nn.Softmax(dim=-1)(attention_scores)
+
+        # Mask heads if we want to
+        if head_mask is not None:
+            attention_probs = attention_probs * head_mask
+
+        context_layer = torch.matmul(attention_probs, value_layer)
+
+        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+        context_layer = context_layer.view(*new_context_layer_shape)
+
+        outputs = (context_layer, attention_probs) if self.output_attentions \
+            else (context_layer,)
+        return outputs
+
+    @staticmethod
+    def get_min_value(dtype):
+        if dtype == torch.float16:
+            min_value = -1e4
+        elif dtype == torch.float32:
+            min_value = -1e9
+        else:
+            raise ValueError("{} not recognized. `dtype` "
+                             "should be set to either `torch.float32` "
+                             "or `torch.float16`".format(dtype))
+        return min_value
+
+
 class BertSelfOutput(nn.Module):
     def __init__(self, hidden_size, dropout_prob=0.1, layer_norm_eps=1e-12):
         super().__init__()
