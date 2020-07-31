@@ -4,6 +4,7 @@ import torch.nn as nn
 
 from .activations import gelu, ACT2FN
 from .utils import get_min_value, prune_linear_layer
+from ..models.config import PSS
 
 
 class BertSelfAttention(nn.Module):
@@ -259,13 +260,13 @@ class BertEncoder(nn.Module):
                  dropout_prob=0.1,
                  hidden_act='gelu',
                  layer_norm_eps=1e-12,
-                 cross_layer_parameter_sharing=None,
+                 cross_layer_parameter_sharing=PSS.NO_PARAMETERS_SHARING,
                  output_attentions=False,
                  output_hidden_states=False):
         super().__init__()
         self.output_attentions = output_attentions
         self.output_hidden_states = output_hidden_states
-        if cross_layer_parameter_sharing is None:
+        if cross_layer_parameter_sharing == PSS.NO_PARAMETERS_SHARING:
             self.layer = nn.ModuleList([BertLayer(hidden_size,
                                                   num_attention_heads,
                                                   intermediate_size,
@@ -275,7 +276,7 @@ class BertEncoder(nn.Module):
                                                   layer_norm_eps,
                                                   output_attentions)
                                         for _ in range(num_hidden_layers)])
-        elif cross_layer_parameter_sharing == 'all_parameters_sharing':
+        elif cross_layer_parameter_sharing == PSS.ALL_PARAMETERS_SHARING:
             self.single_layer = BertLayer(hidden_size,
                                           num_attention_heads,
                                           intermediate_size,
@@ -302,10 +303,15 @@ class BertEncoder(nn.Module):
         all_hidden_states = []
         all_attentions = []
 
-        if self.cross_layer_parameter_sharing is None:
+        if self.cross_layer_parameter_sharing == PSS.NO_PARAMETERS_SHARING:
             layer = self.layer
-        else:
+        elif self.cross_layer_parameter_sharing == PSS.ALL_PARAMETERS_SHARING:
             layer = [self.single_layer for _ in range(self.num_hidden_layers)]
+        else:
+            raise ValueError(f'{self.cross_layer_parameter_sharing} not '
+                             f'recognized. `cross_layer_parameter_sharing` '
+                             f' should be set to either `None`,'
+                             f' `all_parameters_sharing`.')
 
         for layer_module in layer:
 

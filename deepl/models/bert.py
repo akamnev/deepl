@@ -9,7 +9,8 @@ from ..layers.encoders import BertEncoder, LMHead, LMHeadCut
 from ..layers.utils import get_attention_mask
 from .config import (BERTLanguageModelConfig,
                      VectorTextBERTConfig,
-                     TextVectorVAEConfig)
+                     TextVectorVAEConfig,
+                     VPP, VAEType)
 from ..layers.vae import VAENormalTanhAbs
 
 __all__ = ['BERT',
@@ -184,16 +185,16 @@ class VectorText(BERTBase, LMMixin):
 
     def __init__(self, config):
         super().__init__(config)
-        if config.model_type == 'first':
+        if config.model_type == VPP.FIRST:
             embeddings = VectorTextFirstEmbeddings
-        elif config.model_type == 'last':
+        elif config.model_type == VPP.LAST:
             embeddings = VectorTextLastEmbeddings
-        elif config.model_type == 'inside':
+        elif config.model_type == VPP.INSIDE:
             embeddings = VectorTextInsideEmbeddings
         else:
             raise ValueError(f'{config.model_type} not recognized. `model_type`'
-                             f' should be set to either `first`, `last`, '
-                             f'or `inside`')
+                             f' should be set to either `FIRST`, `LAST`, '
+                             f'or `INSIDE`')
 
         self.embedding = embeddings(config.vocab_size,
                                     config.hidden_size,
@@ -241,13 +242,13 @@ class VectorText(BERTBase, LMMixin):
                 encoder_hidden_states=None,
                 encoder_attention_mask=None):
 
-        if self.config.model_type == 'inside':
+        if self.config.model_type == VPP.INSIDE:
             hidden_states = self.embedding(input_ids, input_pos, vectors)
         else:
             hidden_states = self.embedding(input_ids, vectors)
 
         if attention_mask is None:
-            if self.config.model_type == 'inside':
+            if self.config.model_type == VPP.INSIDE:
                 attention_mask = get_attention_mask(input_ids)
             else:
                 max_length = max([len(x) for x in input_ids])
@@ -267,13 +268,13 @@ class VectorText(BERTBase, LMMixin):
         sequence_output = outputs[0]
         if masked_lm_labels is not None:
             max_length = max([len(x) for x in masked_lm_labels])
-            if self.config.model_type == 'first':
+            if self.config.model_type == VPP.FIRST:
                 masked_lm_labels = [
                     [self.config.ignore_index] + x +
                     [self.config.ignore_index] * (max_length - len(x))
                     for x in masked_lm_labels
                 ]
-            elif self.config.model_type == 'last':
+            elif self.config.model_type == VPP.LAST:
                 raise NotImplementedError
             else:
                 masked_lm_labels = [
@@ -308,7 +309,7 @@ class TextVectorMeanVAE(TextVectorMean):
 
     def __init__(self, config):
         super().__init__(config)
-        if config.vae_type == 'normal_tanh_abs':
+        if config.vae_type == VAEType.NORMAL_TANH_ABS:
             self.vae_head = VAENormalTanhAbs(config.hidden_size)
         else:
             raise ValueError(f'{config.vae_type} not recognized. `vae_type`'
