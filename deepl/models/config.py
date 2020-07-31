@@ -194,6 +194,11 @@ class VectorTextBERTConfig(BERTLanguageModelConfig):
         if not isinstance(self.model_type, VPP):
             self.model_type = VPP.from_name(self.model_type)
 
+    def to_dict(self):
+        output = super().to_dict()
+        output['model_type'] = self.model_type.name
+        return output
+
 
 class TextVectorVAEConfig(BERTConfig):
     def __init__(self,
@@ -232,4 +237,9 @@ class TextVectorVAEConfig(BERTConfig):
                          output_hidden_states)
         self.vae_type = vae_type
         if not isinstance(self.vae_type, VAEType):
-            self.vae_type = VAEType.from_name(VAEType)
+            self.vae_type = VAEType.from_name(self.vae_type)
+
+    def to_dict(self):
+        output = super().to_dict()
+        output['vae_type'] = self.vae_type.name
+        return output
