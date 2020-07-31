@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 
 
@@ -24,6 +25,18 @@ def prune_linear_layer(layer, index, dim=0):
         new_layer.bias.copy_(b.contiguous())
         new_layer.bias.requires_grad = True
     return new_layer
+
+
+def get_min_value(tensor):
+    if tensor.dtype == torch.float16:
+        min_value = -1e4
+    elif tensor.dtype == torch.float32:
+        min_value = -1e9
+    else:
+        raise ValueError("{} not recognized. `dtype` "
+                         "should be set to either `torch.float32` "
+                         "or `torch.float16`".format(tensor.dtype))
+    return min_value
 
 
 def get_attention_mask(input_ids):

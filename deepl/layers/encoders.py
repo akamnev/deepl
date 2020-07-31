@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 from .activations import gelu, ACT2FN
-from .utils import prune_linear_layer
+from .utils import get_min_value, prune_linear_layer
 
 
 class BertSelfAttention(nn.Module):
@@ -24,11 +24,13 @@ class BertSelfAttention(nn.Module):
         self.query = nn.Linear(hidden_size, self.all_head_size)
         self.key = nn.Linear(hidden_size, self.all_head_size)
         self.value = nn.Linear(hidden_size, self.all_head_size)
+        self.softmax = nn.Softmax(dim=-1)
 
         self.dropout_prob = dropout_prob
 
     def transpose_for_scores(self, x):
-        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+        new_x_shape = (x.size()[0], x.size()[1], self.num_attention_heads,
+                       self.attention_head_size)
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
 
@@ -37,16 +39,15 @@ class BertSelfAttention(nn.Module):
             mask = torch.ones(scores.shape, dtype=scores.dtype,
                               device=scores.device) * self.dropout_prob
             mask = torch.bernoulli(mask)
-            scores = scores + mask * self.get_min_value(scores.dtype)
+            scores = scores + mask * get_min_value(scores)
         return scores
 
     def forward(
         self,
         hidden_states,
         attention_mask=None,
-        head_mask=None,
         encoder_hidden_states=None,
-        encoder_attention_mask=None,
+        encoder_attention_mask=None
     ):
         mixed_query_layer = self.query(hidden_states)
 
@@ -71,39 +72,23 @@ class BertSelfAttention(nn.Module):
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         if attention_mask is not None:
             extended_attention_mask = 1.0 - attention_mask[:, None, None, :]
-            extended_attention_mask *= self.get_min_value(
-                extended_attention_mask.dtype)
+            extended_attention_mask *= get_min_value(extended_attention_mask)
 
             attention_scores = attention_scores + extended_attention_mask
 
         attention_scores = self.dropout_attention_scores(attention_scores)
-        attention_probs = nn.Softmax(dim=-1)(attention_scores)
-
-        # Mask heads if we want to
-        if head_mask is not None:
-            attention_probs = attention_probs * head_mask
+        attention_probs = self.softmax(attention_scores)
 
         context_layer = torch.matmul(attention_probs, value_layer)
 
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+        new_context_layer_shape = (context_layer.size()[0],
+                                   context_layer.size()[1], self.all_head_size)
         context_layer = context_layer.view(*new_context_layer_shape)
 
-        outputs = (context_layer, attention_probs) if self.output_attentions \
-            else (context_layer,)
+        outputs = [context_layer, attention_probs] if self.output_attentions \
+            else [context_layer]
         return outputs
-
-    @staticmethod
-    def get_min_value(dtype):
-        if dtype == torch.float16:
-            min_value = -1e4
-        elif dtype == torch.float32:
-            min_value = -1e9
-        else:
-            raise ValueError("{} not recognized. `dtype` "
-                             "should be set to either `torch.float32` "
-                             "or `torch.float16`".format(dtype))
-        return min_value
 
 
 class BertSelfOutput(nn.Module):
@@ -167,17 +152,15 @@ class BertAttention(nn.Module):
         self,
         hidden_states,
         attention_mask=None,
-        head_mask=None,
         encoder_hidden_states=None,
-        encoder_attention_mask=None,
+        encoder_attention_mask=None
     ):
         self_outputs = self.self(hidden_states,
                                  attention_mask,
-                                 head_mask,
                                  encoder_hidden_states,
                                  encoder_attention_mask)
         attention_output = self.output(self_outputs[0], hidden_states)
-        outputs = (attention_output,) + self_outputs[1:]
+        outputs = [attention_output] + self_outputs[1:]
         return outputs
 
 
@@ -244,27 +227,25 @@ class BertLayer(nn.Module):
         self,
         hidden_states,
         attention_mask=None,
-        head_mask=None,
         encoder_hidden_states=None,
-        encoder_attention_mask=None,
+        encoder_attention_mask=None
     ):
-        self_attention_outputs = self.attention(hidden_states, attention_mask, head_mask)
+        self_attention_outputs = self.attention(hidden_states, attention_mask)
         attention_output = self_attention_outputs[0]
         outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
 
         if self.is_decoder and encoder_hidden_states is not None:
-            cross_attention_outputs = self.crossattention(attention_output,
-                                                          attention_mask,
-                                                          head_mask,
-                                                          encoder_hidden_states,
-                                                          encoder_attention_mask
-                                                          )
+            cross_attention_outputs = self.cross_attention(attention_output,
+                                                           attention_mask,
+                                                           encoder_hidden_states,
+                                                           encoder_attention_mask
+                                                           )
             attention_output = cross_attention_outputs[0]
             outputs = outputs + cross_attention_outputs[1:]  # add cross attentions if we output attention weights
 
         intermediate_output = self.intermediate(attention_output)
         layer_output = self.output(intermediate_output, attention_output)
-        outputs = (layer_output,) + outputs
+        outputs = [layer_output] + outputs
         return outputs
 
 
@@ -315,40 +296,46 @@ class BertEncoder(nn.Module):
         self,
         hidden_states,
         attention_mask=None,
-        head_mask=None,
         encoder_hidden_states=None,
         encoder_attention_mask=None
     ):
-        all_hidden_states = ()
-        all_attentions = ()
-        for i in range(self.num_hidden_layers):
-            if self.cross_layer_parameter_sharing is None:
-                layer_module = self.layer[i]
-            else:
-                layer_module = self.single_layer
+        all_hidden_states = []
+        all_attentions = []
+
+        if self.cross_layer_parameter_sharing is None:
+            layer = self.layer
+        else:
+            layer = [self.single_layer for _ in range(self.num_hidden_layers)]
+
+        for layer_module in layer:
 
             if self.output_hidden_states:
-                all_hidden_states = all_hidden_states + (hidden_states,)
+                all_hidden_states.append(hidden_states)
 
             layer_outputs = layer_module(hidden_states,
                                          attention_mask,
-                                         head_mask[i],
                                          encoder_hidden_states,
                                          encoder_attention_mask)
             hidden_states = layer_outputs[0]
 
             if self.output_attentions:
-                all_attentions = all_attentions + (layer_outputs[1],)
+                all_attentions.extend(layer_outputs[1:])
 
         # Add last layer
         if self.output_hidden_states:
-            all_hidden_states = all_hidden_states + (hidden_states,)
+            all_hidden_states.append(hidden_states)
 
-        outputs = (hidden_states,)
+        outputs = [hidden_states]
         if self.output_hidden_states:
-            outputs = outputs + (all_hidden_states,)
+            all_hidden_states = [tensor.unsqueeze(dim=0)
+                                 for tensor in all_hidden_states]
+            all_hidden_states = torch.cat(all_hidden_states, dim=0)
+            outputs.append(all_hidden_states)
         if self.output_attentions:
-            outputs = outputs + (all_attentions,)
+            all_attentions = [tensor.unsqueeze(dim=0)
+                              for tensor in all_attentions]
+            all_attentions = torch.cat(all_attentions, dim=0)
+            outputs.append(all_attentions)
         return outputs
 
 

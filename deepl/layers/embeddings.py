@@ -56,8 +56,8 @@ class AbsolutePositionEmbeddingsBase(nn.Module):
 class AbsolutePositionEmbeddings(AbsolutePositionEmbeddingsBase):
     def forward(self, input_ids):
         max_length = max([len(x) for x in input_ids])
-        position_ids = [list(range(self.padding_idx + 1,
-                                   len(x) + self.padding_idx + 1))
+        position_ids = [[xi for xi in range(self.padding_idx + 1,
+                                            len(x) + self.padding_idx + 1)]
                         + [self.padding_idx] * (max_length - len(x))
                         for x in input_ids]
         input_ids = [x + [self.padding_idx] * (max_length - len(x))
@@ -79,8 +79,8 @@ class VectorTextFirstEmbeddings(AbsolutePositionEmbeddingsBase):
     """Add the text's vector to the first token"""
     def forward(self, input_ids, vectors):
         max_length = max([len(x) for x in input_ids])
-        position_ids = [list(range(self.padding_idx + 1,
-                                   len(x) + self.padding_idx + 2))
+        position_ids = [[xi for xi in range(self.padding_idx + 1,
+                                            len(x) + self.padding_idx + 2)]
                         + [self.padding_idx] * (max_length - len(x))
                         for x in input_ids]
         input_ids = [x + [self.padding_idx] * (max_length - len(x))
