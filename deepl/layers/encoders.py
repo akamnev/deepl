@@ -288,8 +288,9 @@ class BertEncoder(nn.Module):
         else:
             raise ValueError(f'{cross_layer_parameter_sharing} not recognized.'
                              f' `cross_layer_parameter_sharing` '
-                             f' should be set to either `None`,'
-                             f' `all_parameters_sharing`.')
+                             f' should be set to either '
+                             f'`PSS.NO_PARAMETERS_SHARING`, '
+                             f'`PSS.ALL_PARAMETERS_SHARING`.')
         self.num_hidden_layers = num_hidden_layers
         self.cross_layer_parameter_sharing = cross_layer_parameter_sharing
 
