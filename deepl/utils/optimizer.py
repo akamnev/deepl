@@ -46,6 +46,7 @@ class AdamW(Optimizer):
         defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
         super().__init__(params, defaults)
 
+    @torch.no_grad()
     def step(self, closure: Callable = None):
         """
         Performs a single optimization step.
@@ -224,5 +225,89 @@ class SGDW(Optimizer):
                 p.add_(grad, alpha=-lr)
                 if weight_decay > 0.0:
                     p.data.add_(p.data, alpha=-lr * weight_decay)
+
+        return loss
+
+
+class AdaSGDW(Optimizer):
+    """
+    Experimental optimizer
+    Parameters:
+        params (:obj:`Iterable[torch.nn.parameter.Parameter]`):
+            Iterable of parameters to optimize or dictionaries defining parameter groups.
+        lr (:obj:`float`, `optional`, defaults to 1e-3):
+            The learning rate to use.
+        betas (:obj:`Tuple[float,float]`, `optional`, defaults to (0.9, 0.999)):
+            Adam's betas parameters (b1, b2).
+        eps (:obj:`float`, `optional`, defaults to 1e-6):
+            Adam's epsilon for numerical stability.
+        weight_decay (:obj:`float`, `optional`, defaults to 0):
+            Decoupled weight decay to apply.
+    """
+
+    def __init__(
+        self,
+        params: Iterable[torch.nn.parameter.Parameter],
+        lr: float = 1e-3,
+        betas: Tuple[float, float] = (0.9, 0.999),
+        eps: float = 1e-6,
+        weight_decay: float = 0.0
+    ):
+        if lr < 0.0:
+            raise ValueError("Invalid learning rate: {} - should be >= 0.0".format(lr))
+        if not 0.0 <= betas[0] < 1.0:
+            raise ValueError("Invalid beta parameter: {} - should be in [0.0, 1.0)".format(betas[0]))
+        if not 0.0 <= betas[1] < 1.0:
+            raise ValueError("Invalid beta parameter: {} - should be in [0.0, 1.0)".format(betas[1]))
+        if not 0.0 <= eps:
+            raise ValueError("Invalid epsilon value: {} - should be >= 0.0".format(eps))
+        defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
+        super().__init__(params, defaults)
+
+    @torch.no_grad()
+    def step(self, closure: Callable = None):
+        """
+        Performs a single optimization step.
+
+        Arguments:
+            closure (:obj:`Callable`, `optional`): A closure that reevaluates
+            the model and returns the loss.
+        """
+        loss = None
+        if closure is not None:
+            loss = closure()
+
+        for group in self.param_groups:
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
+                grad = p.grad
+                if grad.is_sparse:
+                    raise RuntimeError("AdaSGDW does not support sparse gradients")
+
+                state = self.state[p]
+
+                if len(state) == 0:
+                    state["step"] = 0
+                    state["exp_avg"] = torch.zeros_like(p, memory_format=torch.preserve_format)
+                    state["exp_avg_sq"] = torch.zeros_like(p, memory_format=torch.preserve_format)
+
+                exp_avg, exp_avg_sq = state["exp_avg"], state["exp_avg_sq"]
+                beta1, beta2 = group["betas"]
+
+                state["step"] += 1
+
+                exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1.0 - beta2)
+                denom = exp_avg_sq.sqrt().add_(group["eps"])
+
+                bias_correction2 = 1.0 - beta2 ** state["step"]
+                step_size = group["lr"] * math.sqrt(bias_correction2)
+
+                exp_avg.mul_(beta1).addcdiv_(grad, denom,
+                                             value=(1.0 - beta1) * step_size)
+                p.sub_(exp_avg)
+
+                if group["weight_decay"] > 0.0:
+                    p.add_(p.data, alpha=-group["lr"] * group["weight_decay"])
 
         return loss
