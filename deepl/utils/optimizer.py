@@ -106,6 +106,18 @@ class AdamW(Optimizer):
                     p.data.add_(p.data, alpha=-group["lr"] * group["weight_decay"])
 
         return loss
+    
+    def zero_grad(self):
+        """Clears the gradients of all optimized :class:`torch.Tensor` s.
+        PyTorch Performance Tuning Guide - Szymon Migacz, NVIDIA:
+            * doesn't execute memset for every parameter
+            * memory is zeroed-out by the allocator in a more efficient way
+            * backward pass updates gradients with "=" operator (write)
+        """
+        for group in self.param_groups:
+            for p in group['params']:
+                if p.grad is not None:
+                    p.grad = None
 
 
 class SGDW(Optimizer):
@@ -228,6 +240,18 @@ class SGDW(Optimizer):
 
         return loss
 
+    def zero_grad(self):
+        """Clears the gradients of all optimized :class:`torch.Tensor` s.
+        PyTorch Performance Tuning Guide - Szymon Migacz, NVIDIA:
+            * doesn't execute memset for every parameter
+            * memory is zeroed-out by the allocator in a more efficient way
+            * backward pass updates gradients with "=" operator (write)
+        """
+        for group in self.param_groups:
+            for p in group['params']:
+                if p.grad is not None:
+                    p.grad = None
+
 
 class AdaSGDW(Optimizer):
     """
@@ -311,3 +335,15 @@ class AdaSGDW(Optimizer):
                     p.add_(p.data, alpha=-group["lr"] * group["weight_decay"])
 
         return loss
+
+    def zero_grad(self):
+        """Clears the gradients of all optimized :class:`torch.Tensor` s.
+        PyTorch Performance Tuning Guide - Szymon Migacz, NVIDIA:
+            * doesn't execute memset for every parameter
+            * memory is zeroed-out by the allocator in a more efficient way
+            * backward pass updates gradients with "=" operator (write)
+        """
+        for group in self.param_groups:
+            for p in group['params']:
+                if p.grad is not None:
+                    p.grad = None
