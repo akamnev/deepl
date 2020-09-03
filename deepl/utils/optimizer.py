@@ -424,7 +424,7 @@ class Lamb(Optimizer):
 
                 adam_step = exp_avg / exp_avg_sq.sqrt().add(group['eps'])
                 if group['weight_decay'] != 0:
-                    adam_step.add_(group['weight_decay'], p.data)
+                    adam_step.add_(p.data, alpha=group['weight_decay'])
 
                 adam_norm = adam_step.pow(2).sum().sqrt()
                 if weight_norm == 0 or adam_norm == 0:
