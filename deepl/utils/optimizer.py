@@ -515,7 +515,7 @@ class AdaLambW(Optimizer):
                 bias_correction2 = 1.0 - beta2 ** state["step"]
                 step_size = group["lr"] * math.sqrt(bias_correction2)
                 exp_avg.mul_(beta1).addcdiv_(grad, denom,
-                                             value=(1.0 - beta1) * step_size)
+                                             value=(1.0 - beta1))
 
                 weight_norm = p.data.pow(2).sum().sqrt()
                 alg_norm = exp_avg.pow(2).sum().sqrt()
@@ -524,7 +524,7 @@ class AdaLambW(Optimizer):
                     trust_ratio = 1
                 else:
                     trust_ratio = weight_norm / alg_norm
-                p.data.sub_(exp_avg, alpha=trust_ratio)
+                p.data.sub_(exp_avg, alpha=trust_ratio * step_size)
 
                 if group["weight_decay"] > 0.0:
                     p.data.add_(p.data, alpha=-group["lr"] * group["weight_decay"])
