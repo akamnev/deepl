@@ -98,8 +98,9 @@ class BertSelfAttention(nn.Module):
 
 
 class BertSelfAttentionWithRelativePosition(nn.Module):
-    def __init__(self, hidden_size, num_attention_heads, dropout_prob=0.1,
-                 output_attentions=False):
+    def __init__(self, hidden_size, num_attention_heads,
+                 half_width_key, half_width_val,
+                 dropout_prob=0.1, output_attentions=False):
         super().__init__()
         if hidden_size % num_attention_heads != 0:
             raise ValueError(
@@ -119,8 +120,11 @@ class BertSelfAttentionWithRelativePosition(nn.Module):
         self.dropout_prob = dropout_prob
 
         # 0 for padding
-        half_width = 2
-        self.relative_pos_key = nn.Embedding(2 * half_width + 1 + 1,
+        self.half_width_key = half_width_key
+        self.relative_pos_key = nn.Embedding(2 * self.half_width_key + 1 + 1,
+                                             self.attention_head_size)
+        self.half_width_val = half_width_val
+        self.relative_pos_val = nn.Embedding(2 * self.half_width_val + 1 + 1,
                                              self.attention_head_size)
 
     def transpose_for_scores(self, x):
@@ -158,37 +162,12 @@ class BertSelfAttentionWithRelativePosition(nn.Module):
         key_layer = self.transpose_for_scores(mixed_key_layer)
         value_layer = self.transpose_for_scores(mixed_value_layer)
 
-        print(query_layer.shape)
-        n = query_layer.shape[-2]
-        half_width = 2
-        ids = []
-        for i in range(n):
-            for j in range(n):
-                idx = i - j + half_width + 1
-                if idx < 1:
-                    idx = 0
-                elif idx > 2 * half_width + 1:
-                    idx = 0
-                ids.append(idx)
-                # print(i, j, idx)
-                # print(idx)
-        device = query_layer.device
-        ids = torch.tensor(ids, dtype=torch.long, device=device)
-        print(ids)
-        pos = self.relative_pos_key(ids)
-        pos = pos.transpose(0, 1)
-
-        pos = pos.view(self.attention_head_size, n, n)
-        pos = pos.permute(1, 0, 2)
-        attention_scores_pos = torch.matmul(query_layer.unsqueeze(-2), pos)
-        attention_scores_pos = attention_scores_pos.squeeze(-2)
-
-
         # Take the dot product between "query" and "key"
         # to get the raw attention scores.
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-
-        attention_scores = attention_scores + attention_scores_pos
+        if self.half_width_key > 0:
+            attention_scores_pos = self.get_key_position_score(query_layer)
+            attention_scores = attention_scores + attention_scores_pos
 
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         if attention_mask is not None:
@@ -206,6 +185,9 @@ class BertSelfAttentionWithRelativePosition(nn.Module):
             attention_probs = attention_probs * head_mask
 
         context_layer = torch.matmul(attention_probs, value_layer)
+        if self.half_width_val > 0:
+            context_layer_pos = self.get_val_position_score(attention_probs)
+            context_layer = context_layer + context_layer_pos
 
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
@@ -214,6 +196,45 @@ class BertSelfAttentionWithRelativePosition(nn.Module):
         outputs = (context_layer, attention_probs) if self.output_attentions \
             else (context_layer,)
         return outputs
+
+    def get_key_position_score(self, query_layer):
+        n = query_layer.shape[-2]
+        ids = self.get_padded_idx_sequence(n, self.half_width_key)
+        device = query_layer.device
+        ids = torch.tensor(ids, dtype=torch.long, device=device)
+        pos = self.relative_pos_key(ids)
+        pos = pos.transpose(0, 1)
+
+        pos = pos.view(self.attention_head_size, n, n)
+        pos = pos.permute(1, 0, 2)
+        attention_scores_pos = torch.matmul(query_layer.unsqueeze(-2), pos)
+        attention_scores_pos = attention_scores_pos.squeeze(-2)
+        return attention_scores_pos
+
+    def get_val_position_score(self, attention_probs):
+        n = attention_probs.shape[-2]
+        ids = self.get_padded_idx_sequence(n, self.half_width_val)
+        device = attention_probs.device
+        ids = torch.tensor(ids, dtype=torch.long, device=device)
+        pos = self.relative_pos_val(ids)
+        pos = pos.transpose(0, 1)
+
+        pos = pos.view(self.attention_head_size, n, n)
+        pos = pos.permute(1, 2, 0)
+        attention_scores_pos = torch.matmul(attention_probs.unsqueeze(-2), pos)
+        attention_scores_pos = attention_scores_pos.squeeze(-2)
+        return attention_scores_pos
+
+    @staticmethod
+    def get_padded_idx_sequence(n, half_width):
+        ids = []
+        for i in range(n):
+            for j in range(n):
+                idx = i - j + half_width + 1
+                if idx < 1 or idx > 2 * half_width + 1:
+                    idx = 0
+                ids.append(idx)
+        return ids
 
     @staticmethod
     def get_min_value(dtype):
