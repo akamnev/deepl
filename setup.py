@@ -7,7 +7,7 @@ INSTALL_REQUIRES = [
 
 ]
 EXTRAS_REQUIRE = {
-    'dev': ['pytest'],
+    'dev': ['pytest', 'tqdm'],
 }
 
 with open('README.md', 'r') as fh:

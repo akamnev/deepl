@@ -8,9 +8,14 @@ from ..models.config import PSS
 
 
 class BertSelfAttention(nn.Module):
-    def __init__(self, hidden_size, num_attention_heads,
+    def __init__(self,
+                 hidden_size,
+                 num_attention_heads,
+                 half_width_key=0,
+                 half_width_val=0,
                  temperature=1.0,
-                 dropout_prob=0.1,
+                 dropout_head=0.0,
+                 dropout_prob=0.0,
                  output_attentions=False):
         super().__init__()
         if hidden_size % num_attention_heads != 0:
@@ -30,96 +35,9 @@ class BertSelfAttention(nn.Module):
         self.softmax = nn.Softmax(dim=-1)
 
         self.dropout_prob = dropout_prob
+        self.dropout_head = dropout_head
         self.temperature = temperature
 
-    def transpose_for_scores(self, x):
-        new_x_shape = (x.size()[0], x.size()[1], self.num_attention_heads,
-                       self.attention_head_size)
-        x = x.view(*new_x_shape)
-        return x.permute(0, 2, 1, 3)
-
-    def dropout_attention_scores(self, scores):
-        if self.training:
-            mask = torch.ones(scores.shape, dtype=scores.dtype,
-                              device=scores.device) * self.dropout_prob
-            mask = torch.bernoulli(mask)
-            scores = scores + mask * get_min_value(scores)
-        return scores
-
-    def forward(
-        self,
-        hidden_states,
-        attention_mask=None,
-        encoder_hidden_states=None,
-        encoder_attention_mask=None
-    ):
-        mixed_query_layer = self.query(hidden_states)
-
-        # If this is instantiated as a cross-attention module, the keys
-        # and values come from an encoder; the attention mask needs to be
-        # such that the encoder's padding tokens are not attended to.
-        if encoder_hidden_states is not None:
-            mixed_key_layer = self.key(encoder_hidden_states)
-            mixed_value_layer = self.value(encoder_hidden_states)
-            attention_mask = encoder_attention_mask
-        else:
-            mixed_key_layer = self.key(hidden_states)
-            mixed_value_layer = self.value(hidden_states)
-
-        query_layer = self.transpose_for_scores(mixed_query_layer)
-        key_layer = self.transpose_for_scores(mixed_key_layer)
-        value_layer = self.transpose_for_scores(mixed_value_layer)
-
-        # Take the dot product between "query" and "key"
-        # to get the raw attention scores.
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-        if self.temperature != 1.0:
-            attention_scores = attention_scores / self.temperature
-        if attention_mask is not None:
-            extended_attention_mask = 1.0 - attention_mask[:, None, None, :]
-            extended_attention_mask *= get_min_value(extended_attention_mask)
-
-            attention_scores = attention_scores + extended_attention_mask
-
-        attention_scores = self.dropout_attention_scores(attention_scores)
-        attention_probs = self.softmax(attention_scores)
-
-        context_layer = torch.matmul(attention_probs, value_layer)
-
-        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-        new_context_layer_shape = (context_layer.size()[0],
-                                   context_layer.size()[1], self.all_head_size)
-        context_layer = context_layer.view(*new_context_layer_shape)
-
-        outputs = [context_layer, attention_probs] if self.output_attentions \
-            else [context_layer]
-        return outputs
-
-
-class BertSelfAttentionWithRelativePosition(nn.Module):
-    def __init__(self, hidden_size, num_attention_heads,
-                 half_width_key, half_width_val,
-                 dropout_prob=0.1, output_attentions=False):
-        super().__init__()
-        if hidden_size % num_attention_heads != 0:
-            raise ValueError(
-                "The hidden size (%d) is not a multiple of the number of attention "
-                "heads (%d)" % (hidden_size, num_attention_heads)
-            )
-        self.output_attentions = output_attentions
-
-        self.num_attention_heads = num_attention_heads
-        self.attention_head_size = int(hidden_size / num_attention_heads)
-        self.all_head_size = self.num_attention_heads * self.attention_head_size
-
-        self.query = nn.Linear(hidden_size, self.all_head_size)
-        self.key = nn.Linear(hidden_size, self.all_head_size)
-        self.value = nn.Linear(hidden_size, self.all_head_size)
-
-        self.dropout_prob = dropout_prob
-
-        # 0 for padding
         self.half_width_key = half_width_key
         self.relative_pos_key = nn.Embedding(2 * self.half_width_key + 1 + 1,
                                              self.attention_head_size)
@@ -148,8 +66,19 @@ class BertSelfAttentionWithRelativePosition(nn.Module):
         encoder_hidden_states=None,
         encoder_attention_mask=None,
     ):
-        mixed_query_layer = self.query(hidden_states)
+        query_layer, key_layer, value_layer, attention_mask = self.get_query_key_value(
+            hidden_states, attention_mask, encoder_hidden_states, encoder_attention_mask)
+        attention_probs = self.get_attention_probs(query_layer, key_layer, attention_mask)
+        attention_probs = self.mask_headers(attention_probs, head_mask)
+        context_layer = self.get_context_layer(attention_probs, value_layer)
+        outputs = (context_layer, attention_probs) if self.output_attentions \
+            else (context_layer,)
+        return outputs
 
+    def get_query_key_value(self,
+                            hidden_states, attention_mask,
+                            encoder_hidden_states, encoder_attention_mask):
+        mixed_query_layer = self.query(hidden_states)
         if encoder_hidden_states is not None:
             mixed_key_layer = self.key(encoder_hidden_states)
             mixed_value_layer = self.value(encoder_hidden_states)
@@ -161,52 +90,48 @@ class BertSelfAttentionWithRelativePosition(nn.Module):
         query_layer = self.transpose_for_scores(mixed_query_layer)
         key_layer = self.transpose_for_scores(mixed_key_layer)
         value_layer = self.transpose_for_scores(mixed_value_layer)
+        return query_layer, key_layer, value_layer, attention_mask
 
-        # Take the dot product between "query" and "key"
-        # to get the raw attention scores.
+    def get_attention_probs(self, query_layer, key_layer, attention_mask):
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
         if self.half_width_key > 0:
             attention_scores_pos = self.get_key_position_score(query_layer)
             attention_scores = attention_scores + attention_scores_pos
-
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         if attention_mask is not None:
             extended_attention_mask = 1.0 - attention_mask[:, None, None, :]
-            extended_attention_mask *= self.get_min_value(
-                extended_attention_mask.dtype)
-
+            extended_attention_mask *= self.get_min_value(extended_attention_mask.dtype)
             attention_scores = attention_scores + extended_attention_mask
 
         attention_scores = self.dropout_attention_scores(attention_scores)
+        if self.temperature != 1.0:
+            attention_scores = attention_scores / self.temperature
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
+        return attention_probs
 
-        # Mask heads if we want to
-        if head_mask is not None:
-            attention_probs = attention_probs * head_mask
-
+    def get_context_layer(self, attention_probs, value_layer):
         context_layer = torch.matmul(attention_probs, value_layer)
         if self.half_width_val > 0:
             context_layer_pos = self.get_val_position_score(attention_probs)
             context_layer = context_layer + context_layer_pos
-
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
         context_layer = context_layer.view(*new_context_layer_shape)
+        return context_layer
 
-        outputs = (context_layer, attention_probs) if self.output_attentions \
-            else (context_layer,)
-        return outputs
+    def mask_headers(self, attention_probs, mask):
+        # TODO: create head-dropout here
+        if mask is not None:
+            attention_probs = attention_probs * mask
+        return attention_probs
 
     def get_key_position_score(self, query_layer):
         n = query_layer.shape[-2]
         ids = self.get_padded_idx_sequence(n, self.half_width_key)
-        device = query_layer.device
-        ids = torch.tensor(ids, dtype=torch.long, device=device)
+        ids = torch.tensor(ids, dtype=torch.long, device=query_layer.device)
         pos = self.relative_pos_key(ids)
-        pos = pos.transpose(0, 1)
-
-        pos = pos.view(self.attention_head_size, n, n)
-        pos = pos.permute(1, 0, 2)
+        pos = pos.view(n, n, self.attention_head_size)
+        pos = pos.permute(0, 2, 1)
         attention_scores_pos = torch.matmul(query_layer.unsqueeze(-2), pos)
         attention_scores_pos = attention_scores_pos.squeeze(-2)
         return attention_scores_pos
@@ -231,7 +156,7 @@ class BertSelfAttentionWithRelativePosition(nn.Module):
         for i in range(n):
             for j in range(n):
                 idx = i - j + half_width + 1
-                if idx < 1 or idx > 2 * half_width + 1:
+                if idx < 1 or 2 * half_width + 1 < idx:
                     idx = 0
                 ids.append(idx)
         return ids
