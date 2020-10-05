@@ -76,8 +76,10 @@ class BertSelfAttention(nn.Module):
         return outputs
 
     def get_query_key_value(self,
-                            hidden_states, attention_mask,
-                            encoder_hidden_states, encoder_attention_mask):
+                            hidden_states,
+                            attention_mask,
+                            encoder_hidden_states,
+                            encoder_attention_mask):
         mixed_query_layer = self.query(hidden_states)
         if encoder_hidden_states is not None:
             mixed_key_layer = self.key(encoder_hidden_states)
@@ -192,46 +194,25 @@ class BertAttention(nn.Module):
     def __init__(self,
                  hidden_size,
                  num_attention_heads,
+                 half_width_key=0,
+                 half_width_val=0,
                  temperature=1.0,
+                 dropout_head=0.0,
                  dropout_prob=0.1,
                  layer_norm_eps=1e-12,
                  output_attentions=False):
         super().__init__()
-        self.self = BertSelfAttention(hidden_size,
-                                      num_attention_heads,
-                                      temperature,
-                                      dropout_prob,
-                                      output_attentions)
-        self.output = BertSelfOutput(hidden_size,
-                                     dropout_prob,
-                                     layer_norm_eps)
-        self.pruned_heads = set()
-
-    def prune_heads(self, heads):
-        if len(heads) == 0:
-            return
-        mask = torch.ones(self.self.num_attention_heads,
-                          self.self.attention_head_size)
-        # Convert to set and remove already pruned heads
-        heads = set(heads) - self.pruned_heads
-        for head in heads:
-            # Compute how many pruned heads are before the head and move
-            # the index accordingly
-            head = head - sum(1 if h < head else 0 for h in self.pruned_heads)
-            mask[head] = 0
-        mask = mask.view(-1).contiguous().eq(1)
-        index = torch.arange(len(mask))[mask].long()
-
-        # Prune linear layers
-        self.self.query = prune_linear_layer(self.self.query, index)
-        self.self.key = prune_linear_layer(self.self.key, index)
-        self.self.value = prune_linear_layer(self.self.value, index)
-        self.output.dense = prune_linear_layer(self.output.dense, index, dim=1)
-
-        # Update hyper params and store pruned heads
-        self.self.num_attention_heads = self.self.num_attention_heads - len(heads)
-        self.self.all_head_size = self.self.attention_head_size * self.self.num_attention_heads
-        self.pruned_heads = self.pruned_heads.union(heads)
+        self.self = BertSelfAttention(hidden_size=hidden_size,
+                                      num_attention_heads=num_attention_heads,
+                                      half_width_key=half_width_key,
+                                      half_width_val=half_width_val,
+                                      temperature=temperature,
+                                      dropout_head=dropout_head,
+                                      dropout_prob=dropout_prob,
+                                      output_attentions=output_attentions)
+        self.output = BertSelfOutput(hidden_size=hidden_size,
+                                     dropout_prob=dropout_prob,
+                                     layer_norm_eps=layer_norm_eps)
 
     def forward(
         self,
@@ -284,32 +265,43 @@ class BertLayer(nn.Module):
     def __init__(self, hidden_size,
                  num_attention_heads,
                  intermediate_size,
+                 half_width_key=0,
+                 half_width_val=0,
                  is_decoder=False,
                  temperature=1.0,
+                 dropout_head=0.0,
                  dropout_prob=0.1,
                  hidden_act='gelu',
                  layer_norm_eps=1e-12,
                  output_attentions=False):
         super().__init__()
-        self.attention = BertAttention(hidden_size,
-                                       num_attention_heads,
-                                       temperature,
-                                       dropout_prob,
-                                       layer_norm_eps,
-                                       output_attentions)
+        self.attention = BertAttention(hidden_size=hidden_size,
+                                       num_attention_heads=num_attention_heads,
+                                       half_width_key=half_width_key,
+                                       half_width_val=half_width_val,
+                                       temperature=temperature,
+                                       dropout_head=dropout_head,
+                                       dropout_prob=dropout_prob,
+                                       layer_norm_eps=layer_norm_eps,
+                                       output_attentions=output_attentions)
         self.is_decoder = is_decoder
         if self.is_decoder:
-            self.cross_attention = BertAttention(hidden_size,
-                                                 num_attention_heads,
-                                                 temperature,
-                                                 dropout_prob,
-                                                 layer_norm_eps,
-                                                 output_attentions)
-        self.intermediate = BertIntermediate(hidden_size,
-                                             intermediate_size,
-                                             hidden_act)
-        self.output = BertOutput(hidden_size, intermediate_size,
-                                 dropout_prob, layer_norm_eps)
+            self.cross_attention = BertAttention(hidden_size=hidden_size,
+                                                 num_attention_heads=num_attention_heads,
+                                                 half_width_key=half_width_key,
+                                                 half_width_val=half_width_val,
+                                                 temperature=temperature,
+                                                 dropout_head=dropout_head,
+                                                 dropout_prob=dropout_prob,
+                                                 layer_norm_eps=layer_norm_eps,
+                                                 output_attentions=output_attentions)
+        self.intermediate = BertIntermediate(hidden_size=hidden_size,
+                                             intermediate_size=intermediate_size,
+                                             hidden_act=hidden_act)
+        self.output = BertOutput(hidden_size=hidden_size,
+                                 intermediate_size=intermediate_size,
+                                 dropout_prob=dropout_prob,
+                                 layer_norm_eps=layer_norm_eps)
 
     def forward(
         self,
@@ -343,8 +335,11 @@ class BertEncoder(nn.Module):
                  num_attention_heads,
                  hidden_size,
                  intermediate_size,
+                 half_width_key=0,
+                 half_width_val=0,
                  is_decoder=False,
                  temperature=1.0,
+                 dropout_head=0.0,
                  dropout_prob=0.1,
                  hidden_act='gelu',
                  layer_norm_eps=1e-12,
@@ -355,26 +350,32 @@ class BertEncoder(nn.Module):
         self.output_attentions = output_attentions
         self.output_hidden_states = output_hidden_states
         if cross_layer_parameter_sharing == PSS.NO_PARAMETERS_SHARING:
-            self.layer = nn.ModuleList([BertLayer(hidden_size,
-                                                  num_attention_heads,
-                                                  intermediate_size,
-                                                  is_decoder,
-                                                  temperature,
-                                                  dropout_prob,
-                                                  hidden_act,
-                                                  layer_norm_eps,
-                                                  output_attentions)
+            self.layer = nn.ModuleList([BertLayer(hidden_size=hidden_size,
+                                                  num_attention_heads=num_attention_heads,
+                                                  intermediate_size=intermediate_size,
+                                                  half_width_key=half_width_key,
+                                                  half_width_val=half_width_val,
+                                                  is_decoder=is_decoder,
+                                                  temperature=temperature,
+                                                  dropout_head=dropout_head,
+                                                  dropout_prob=dropout_prob,
+                                                  hidden_act=hidden_act,
+                                                  layer_norm_eps=layer_norm_eps,
+                                                  output_attentions=output_attentions)
                                         for _ in range(num_hidden_layers)])
         elif cross_layer_parameter_sharing == PSS.ALL_PARAMETERS_SHARING:
-            self.single_layer = BertLayer(hidden_size,
-                                          num_attention_heads,
-                                          intermediate_size,
-                                          is_decoder,
-                                          temperature,
-                                          dropout_prob,
-                                          hidden_act,
-                                          layer_norm_eps,
-                                          output_attentions)
+            self.single_layer = BertLayer(hidden_size=hidden_size,
+                                          num_attention_heads=num_attention_heads,
+                                          intermediate_size=intermediate_size,
+                                          half_width_key=half_width_key,
+                                          half_width_val=half_width_val,
+                                          is_decoder=is_decoder,
+                                          temperature=temperature,
+                                          dropout_head=dropout_head,
+                                          dropout_prob=dropout_prob,
+                                          hidden_act=hidden_act,
+                                          layer_norm_eps=layer_norm_eps,
+                                          output_attentions=output_attentions)
         else:
             raise ValueError(f'{cross_layer_parameter_sharing} not recognized.'
                              f' `cross_layer_parameter_sharing` '
