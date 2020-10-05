@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import math
 from deepl.layers.encoders import BertSelfAttention
+from deepl.layers.utils import get_min_value
 
 MAX_FLOAT32_ERROR = 1e-6
 
@@ -75,7 +76,7 @@ class BertSelfAttentionNaiveImpl(nn.Module):
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         if attention_mask is not None:
             extended_attention_mask = 1.0 - attention_mask[:, None, None, :]
-            extended_attention_mask *= self.get_min_value(extended_attention_mask.dtype)
+            extended_attention_mask *= get_min_value(extended_attention_mask.dtype)
             attention_scores = attention_scores + extended_attention_mask
 
         # attention_scores = self.dropout_attention_scores(attention_scores)
@@ -128,18 +129,6 @@ class BertSelfAttentionNaiveImpl(nn.Module):
                 q = torch.matmul(attention_probs[:, :, i, j].unsqueeze(-1), w)
                 context_layer_pos[:, :, i, :] += q
         return context_layer_pos
-
-    @staticmethod
-    def get_min_value(dtype):
-        if dtype == torch.float16:
-            min_value = -1e4
-        elif dtype == torch.float32:
-            min_value = -1e9
-        else:
-            raise ValueError("{} not recognized. `dtype` "
-                             "should be set to either `torch.float32` "
-                             "or `torch.float16`".format(dtype))
-        return min_value
 
 
 def naive_test_obj():

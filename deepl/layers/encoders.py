@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 from .activations import gelu, ACT2FN
-from .utils import get_min_value, prune_linear_layer
+from .utils import get_min_value
 from ..models.config import PSS
 
 
@@ -55,7 +55,7 @@ class BertSelfAttention(nn.Module):
             mask = torch.ones(scores.shape, dtype=scores.dtype,
                               device=scores.device) * self.dropout_prob
             mask = torch.bernoulli(mask)
-            scores = scores + mask * self.get_min_value(scores.dtype)
+            scores = scores + mask * get_min_value(scores.dtype)
         return scores
 
     def forward(
@@ -102,7 +102,7 @@ class BertSelfAttention(nn.Module):
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         if attention_mask is not None:
             extended_attention_mask = 1.0 - attention_mask[:, None, None, :]
-            extended_attention_mask *= self.get_min_value(extended_attention_mask.dtype)
+            extended_attention_mask *= get_min_value(extended_attention_mask.dtype)
             attention_scores = attention_scores + extended_attention_mask
 
         attention_scores = self.dropout_attention_scores(attention_scores)
@@ -162,18 +162,6 @@ class BertSelfAttention(nn.Module):
                     idx = 0
                 ids.append(idx)
         return ids
-
-    @staticmethod
-    def get_min_value(dtype):
-        if dtype == torch.float16:
-            min_value = -1e4
-        elif dtype == torch.float32:
-            min_value = -1e9
-        else:
-            raise ValueError("{} not recognized. `dtype` "
-                             "should be set to either `torch.float32` "
-                             "or `torch.float16`".format(dtype))
-        return min_value
 
 
 class BertSelfOutput(nn.Module):
