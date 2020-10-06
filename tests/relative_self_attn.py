@@ -76,7 +76,7 @@ class BertSelfAttentionNaiveImpl(nn.Module):
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         if attention_mask is not None:
             extended_attention_mask = 1.0 - attention_mask[:, None, None, :]
-            extended_attention_mask *= get_min_value(extended_attention_mask.dtype)
+            extended_attention_mask *= get_min_value(extended_attention_mask)
             attention_scores = attention_scores + extended_attention_mask
 
         # attention_scores = self.dropout_attention_scores(attention_scores)
@@ -100,7 +100,6 @@ class BertSelfAttentionNaiveImpl(nn.Module):
         n = query_layer.shape[-2]
         attention_scores_pos = torch.zeros(query_layer.shape[:2] + (n, n),
                                            device=query_layer.device)
-        aaa = torch.zeros((n, n), dtype=torch.long)
         for i in range(n):
             for j in range(n):
                 pos_idx = i - j + self.half_width_key + 1
@@ -111,7 +110,6 @@ class BertSelfAttentionNaiveImpl(nn.Module):
                 w = self.relative_pos_key(pos_idx).view(-1, 1)
                 q = torch.matmul(query_layer[:, :, i, :], w)
                 attention_scores_pos[:, :, i, j] = q.squeeze(-1)
-                aaa[i, j] = pos_idx
         return attention_scores_pos
 
     def get_val_position_score(self, attention_probs):

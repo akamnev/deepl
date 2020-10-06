@@ -39,11 +39,13 @@ class BertSelfAttention(nn.Module):
         self.temperature = temperature
 
         self.half_width_key = half_width_key
-        self.relative_pos_key = nn.Embedding(2 * self.half_width_key + 1 + 1,
-                                             self.attention_head_size)
+        if half_width_key > 0:
+            self.relative_pos_key = nn.Embedding(2 * self.half_width_key + 1 + 1,
+                                                 self.attention_head_size)
         self.half_width_val = half_width_val
-        self.relative_pos_val = nn.Embedding(2 * self.half_width_val + 1 + 1,
-                                             self.attention_head_size)
+        if half_width_val > 0:
+            self.relative_pos_val = nn.Embedding(2 * self.half_width_val + 1 + 1,
+                                                 self.attention_head_size)
 
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
@@ -55,7 +57,7 @@ class BertSelfAttention(nn.Module):
             mask = torch.ones(scores.shape, dtype=scores.dtype,
                               device=scores.device) * self.dropout_prob
             mask = torch.bernoulli(mask)
-            scores = scores + mask * get_min_value(scores.dtype)
+            scores = scores + mask * get_min_value(scores)
         return scores
 
     def forward(
@@ -100,15 +102,15 @@ class BertSelfAttention(nn.Module):
             attention_scores_pos = self.get_key_position_score(query_layer)
             attention_scores = attention_scores + attention_scores_pos
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+        if self.temperature != 1.0:
+            attention_scores = attention_scores / self.temperature
         if attention_mask is not None:
             extended_attention_mask = 1.0 - attention_mask[:, None, None, :]
-            extended_attention_mask *= get_min_value(extended_attention_mask.dtype)
+            extended_attention_mask *= get_min_value(extended_attention_mask)
             attention_scores = attention_scores + extended_attention_mask
 
         attention_scores = self.dropout_attention_scores(attention_scores)
-        if self.temperature != 1.0:
-            attention_scores = attention_scores / self.temperature
-        attention_probs = nn.Softmax(dim=-1)(attention_scores)
+        attention_probs = self.softmax(attention_scores)
         return attention_probs
 
     def get_context_layer(self, attention_probs, value_layer):
