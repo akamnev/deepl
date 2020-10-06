@@ -39,10 +39,10 @@ class BertSelfAttentionNaiveImpl(nn.Module):
 
         # 0 for padding
         self.half_width_key = half_width_key
-        self.relative_pos_key = nn.Embedding(2 * self.half_width_key + 1 + 1,
+        self.relative_pos_key = nn.Embedding(2 * self.half_width_key + 1,
                                              self.attention_head_size)
         self.half_width_val = half_width_val
-        self.relative_pos_val = nn.Embedding(2 * self.half_width_val + 1 + 1,
+        self.relative_pos_val = nn.Embedding(2 * self.half_width_val + 1,
                                              self.attention_head_size)
 
     def forward(self, hidden_states, attention_mask=None, head_mask=None):
@@ -102,14 +102,13 @@ class BertSelfAttentionNaiveImpl(nn.Module):
                                            device=query_layer.device)
         for i in range(n):
             for j in range(n):
-                pos_idx = i - j + self.half_width_key + 1
-                if pos_idx < 1 or 2 * self.half_width_key + 1 < pos_idx:
-                    pos_idx = 0
-                pos_idx = torch.tensor(pos_idx, device=query_layer.device,
-                                       dtype=torch.long)
-                w = self.relative_pos_key(pos_idx).view(-1, 1)
-                q = torch.matmul(query_layer[:, :, i, :], w)
-                attention_scores_pos[:, :, i, j] = q.squeeze(-1)
+                pos_idx = j - i + self.half_width_key
+                if 0 <= pos_idx < 2 * self.half_width_key + 1:
+                    pos_idx = torch.tensor(pos_idx, device=query_layer.device,
+                                           dtype=torch.long)
+                    w = self.relative_pos_key(pos_idx).view(-1, 1)
+                    q = torch.matmul(query_layer[:, :, i, :], w)
+                    attention_scores_pos[:, :, i, j] = q.squeeze(-1)
         return attention_scores_pos
 
     def get_val_position_score(self, attention_probs):
@@ -118,14 +117,13 @@ class BertSelfAttentionNaiveImpl(nn.Module):
                                         device=attention_probs.device)
         for i in range(n):
             for j in range(n):
-                pos_idx = i - j + self.half_width_val + 1
-                if pos_idx < 1 or 2 * self.half_width_val + 1 < pos_idx:
-                    pos_idx = 0
-                pos_idx = torch.tensor(pos_idx, device=attention_probs.device,
-                                       dtype=torch.long)
-                w = self.relative_pos_val(pos_idx).view(1, -1)
-                q = torch.matmul(attention_probs[:, :, i, j].unsqueeze(-1), w)
-                context_layer_pos[:, :, i, :] += q
+                pos_idx = j - i + self.half_width_val
+                if 0 <= pos_idx < 2 * self.half_width_val + 1:
+                    pos_idx = torch.tensor(pos_idx, device=attention_probs.device,
+                                           dtype=torch.long)
+                    w = self.relative_pos_val(pos_idx).view(1, -1)
+                    q = torch.matmul(attention_probs[:, :, i, j].unsqueeze(-1), w)
+                    context_layer_pos[:, :, i, :] += q
         return context_layer_pos
 
 
@@ -150,8 +148,8 @@ def naive_test_obj():
     obj_naive.query = obj_test.query
     obj_naive.key = obj_test.key
     obj_naive.value = obj_test.value
-    obj_naive.relative_pos_key = obj_test.relative_pos_key
-    obj_naive.relative_pos_val = obj_test.relative_pos_val
+    obj_naive.relative_pos_key.weight = nn.Parameter(obj_test.relative_pos_key.weight.detach().T)
+    obj_naive.relative_pos_val.weight = nn.Parameter(obj_test.relative_pos_val.detach())
 
     return obj_naive, obj_test, hidden_size
 
@@ -204,7 +202,6 @@ def test_position_value_score():
     att_pos_naive = obj_naive.get_val_position_score(att_prob_naive)
     att_pos_test = obj_test.get_val_position_score(att_prob_test)
     dv = att_pos_naive - att_pos_test
-
     assert torch.max(torch.abs(dv)) < MAX_FLOAT32_ERROR
 
 

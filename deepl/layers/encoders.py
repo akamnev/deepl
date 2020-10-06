@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 from .activations import gelu, ACT2FN
-from .utils import get_min_value
+from .utils import get_min_value, Conv1D
 from ..models.config import PSS
 
 
@@ -40,12 +40,15 @@ class BertSelfAttention(nn.Module):
 
         self.half_width_key = half_width_key
         if half_width_key > 0:
-            self.relative_pos_key = nn.Embedding(2 * self.half_width_key + 1 + 1,
-                                                 self.attention_head_size)
+            self.relative_pos_key = Conv1D(2 * self.half_width_key + 1,
+                                           self.attention_head_size,
+                                           bias=False)
         self.half_width_val = half_width_val
         if half_width_val > 0:
-            self.relative_pos_val = nn.Embedding(2 * self.half_width_val + 1 + 1,
-                                                 self.attention_head_size)
+            w = torch.empty(2 * self.half_width_val + 1,
+                            self.attention_head_size)
+            nn.init.normal_(w, std=0.02)
+            self.relative_pos_val = nn.Parameter(w)
 
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
@@ -131,27 +134,34 @@ class BertSelfAttention(nn.Module):
 
     def get_key_position_score(self, query_layer):
         n = query_layer.shape[-2]
-        ids = self.get_padded_idx_sequence(n, self.half_width_key)
-        ids = torch.tensor(ids, dtype=torch.long, device=query_layer.device)
-        pos = self.relative_pos_key(ids)
-        pos = pos.view(n, n, self.attention_head_size)
-        pos = pos.permute(0, 2, 1)
-        attention_scores_pos = torch.matmul(query_layer.unsqueeze(-2), pos)
-        attention_scores_pos = attention_scores_pos.squeeze(-2)
+        a_k = self.relative_pos_key(query_layer)
+        attention_scores_pos = torch.zeros(query_layer.shape[:2] + (n * n, ))
+        ids_att = [i * n + j
+                   for i in range(n)
+                   for j in range(max(0, i-self.half_width_key), min(n, i + self.half_width_key + 1))]
+        ids_a_k = [i * (2 * self.half_width_key + 1) + j
+                   for i in range(n)
+                   for j in range(2 * self.half_width_key + 1)
+                   if self.half_width_key <= i + j < n + self.half_width_key]
+        a_k = a_k.view(a_k.shape[:-2] + (-1, ))[:, :, ids_a_k]
+        attention_scores_pos[:, :, ids_att] = a_k
+        attention_scores_pos = attention_scores_pos.view(attention_scores_pos.shape[:-1] + (n, n))
         return attention_scores_pos
 
     def get_val_position_score(self, attention_probs):
         n = attention_probs.shape[-2]
-        ids = self.get_padded_idx_sequence(n, self.half_width_val)
-        device = attention_probs.device
-        ids = torch.tensor(ids, dtype=torch.long, device=device)
-        pos = self.relative_pos_val(ids)
-        pos = pos.transpose(0, 1)
-
-        pos = pos.view(self.attention_head_size, n, n)
-        pos = pos.permute(1, 2, 0)
-        attention_scores_pos = torch.matmul(attention_probs.unsqueeze(-2), pos)
-        attention_scores_pos = attention_scores_pos.squeeze(-2)
+        w = 2 * self.half_width_val + 1
+        attention_scores_pos = torch.zeros(attention_probs.shape[:2] + (n * w, ))
+        ids_att = [i * n + j
+                   for i in range(n)
+                   for j in range(max(0, i-self.half_width_val), min(n, i + self.half_width_val + 1))]
+        ids_a_v = [i * (2 * self.half_width_val + 1) + j
+                   for i in range(n)
+                   for j in range(2 * self.half_width_val + 1)
+                   if self.half_width_val <= i + j < n + self.half_width_val]
+        attention_scores_pos[:, :, ids_a_v] = attention_probs.view(attention_probs.shape[:-2] + (-1,))[:, :, ids_att]
+        attention_scores_pos = attention_scores_pos.view(attention_scores_pos.shape[:-1] + (n, w))
+        attention_scores_pos = torch.matmul(attention_scores_pos, self.relative_pos_val)
         return attention_scores_pos
 
     @staticmethod
