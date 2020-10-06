@@ -8,7 +8,9 @@ from ..models.config import PSS
 
 
 class BertSelfAttention(nn.Module):
-    def __init__(self, hidden_size, num_attention_heads, dropout_prob=0.1,
+    def __init__(self, hidden_size, num_attention_heads,
+                 temperature=1.0,
+                 dropout_prob=0.1,
                  output_attentions=False):
         super().__init__()
         if hidden_size % num_attention_heads != 0:
@@ -28,6 +30,7 @@ class BertSelfAttention(nn.Module):
         self.softmax = nn.Softmax(dim=-1)
 
         self.dropout_prob = dropout_prob
+        self.temperature = temperature
 
     def transpose_for_scores(self, x):
         new_x_shape = (x.size()[0], x.size()[1], self.num_attention_heads,
@@ -71,6 +74,8 @@ class BertSelfAttention(nn.Module):
         # to get the raw attention scores.
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+        if self.temperature != 1.0:
+            attention_scores = attention_scores / self.temperature
         if attention_mask is not None:
             extended_attention_mask = 1.0 - attention_mask[:, None, None, :]
             extended_attention_mask *= get_min_value(extended_attention_mask)
@@ -110,12 +115,14 @@ class BertAttention(nn.Module):
     def __init__(self,
                  hidden_size,
                  num_attention_heads,
+                 temperature=1.0,
                  dropout_prob=0.1,
                  layer_norm_eps=1e-12,
                  output_attentions=False):
         super().__init__()
         self.self = BertSelfAttention(hidden_size,
                                       num_attention_heads,
+                                      temperature,
                                       dropout_prob,
                                       output_attentions)
         self.output = BertSelfOutput(hidden_size,
@@ -201,6 +208,7 @@ class BertLayer(nn.Module):
                  num_attention_heads,
                  intermediate_size,
                  is_decoder=False,
+                 temperature=1.0,
                  dropout_prob=0.1,
                  hidden_act='gelu',
                  layer_norm_eps=1e-12,
@@ -208,6 +216,7 @@ class BertLayer(nn.Module):
         super().__init__()
         self.attention = BertAttention(hidden_size,
                                        num_attention_heads,
+                                       temperature,
                                        dropout_prob,
                                        layer_norm_eps,
                                        output_attentions)
@@ -215,6 +224,7 @@ class BertLayer(nn.Module):
         if self.is_decoder:
             self.cross_attention = BertAttention(hidden_size,
                                                  num_attention_heads,
+                                                 temperature,
                                                  dropout_prob,
                                                  layer_norm_eps,
                                                  output_attentions)
@@ -257,6 +267,7 @@ class BertEncoder(nn.Module):
                  hidden_size,
                  intermediate_size,
                  is_decoder=False,
+                 temperature=1.0,
                  dropout_prob=0.1,
                  hidden_act='gelu',
                  layer_norm_eps=1e-12,
@@ -271,6 +282,7 @@ class BertEncoder(nn.Module):
                                                   num_attention_heads,
                                                   intermediate_size,
                                                   is_decoder,
+                                                  temperature,
                                                   dropout_prob,
                                                   hidden_act,
                                                   layer_norm_eps,
@@ -281,6 +293,7 @@ class BertEncoder(nn.Module):
                                           num_attention_heads,
                                           intermediate_size,
                                           is_decoder,
+                                          temperature,
                                           dropout_prob,
                                           hidden_act,
                                           layer_norm_eps,

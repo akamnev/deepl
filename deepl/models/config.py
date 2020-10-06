@@ -67,6 +67,7 @@ class BERTConfig(ConfigBase):
                  vocab_size,
                  max_position_embedding,
                  device='cpu',
+                 temperature=1.0,
                  dropout_prob=0.1,
                  layer_norm_eps=1e-12,
                  is_decoder=False,
@@ -83,6 +84,7 @@ class BERTConfig(ConfigBase):
         self.vocab_size = vocab_size
         self.max_position_embedding = max_position_embedding
         self.device = device
+        self.temperature = temperature
         self.dropout_prob = dropout_prob
         self.layer_norm_eps = layer_norm_eps
         self.is_decoder = is_decoder
@@ -116,6 +118,7 @@ class BERTLanguageModelConfig(BERTConfig):
                  vocab_size,
                  max_position_embedding,
                  device='cpu',
+                 temperature=1.0,
                  dropout_prob=0.1,
                  layer_norm_eps=1e-12,
                  is_decoder=False,
@@ -135,6 +138,7 @@ class BERTLanguageModelConfig(BERTConfig):
                          vocab_size,
                          max_position_embedding,
                          device,
+                         temperature,
                          dropout_prob,
                          layer_norm_eps,
                          is_decoder,
@@ -159,6 +163,7 @@ class VectorTextBERTConfig(BERTLanguageModelConfig):
                  max_position_embedding,
                  model_type=VPP.INSIDE,
                  device='cpu',
+                 temperature=1.0,
                  dropout_prob=0.1,
                  layer_norm_eps=1e-12,
                  is_decoder=False,
@@ -178,6 +183,7 @@ class VectorTextBERTConfig(BERTLanguageModelConfig):
                          vocab_size,
                          max_position_embedding,
                          device,
+                         temperature,
                          dropout_prob,
                          layer_norm_eps,
                          is_decoder,
@@ -209,6 +215,7 @@ class TextVectorVAEConfig(BERTConfig):
                  vocab_size,
                  max_position_embedding,
                  device='cpu',
+                 temperature=1.0,
                  dropout_prob=0.1,
                  layer_norm_eps=1e-12,
                  is_decoder=False,
@@ -226,6 +233,7 @@ class TextVectorVAEConfig(BERTConfig):
                          vocab_size,
                          max_position_embedding,
                          device,
+                         temperature,
                          dropout_prob,
                          layer_norm_eps,
                          is_decoder,
