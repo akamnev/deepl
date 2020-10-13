@@ -76,8 +76,8 @@ class BertSelfAttention(nn.Module):
         attention_probs = self.get_attention_probs(query_layer, key_layer, attention_mask)
         attention_probs = self.mask_headers(attention_probs, head_mask)
         context_layer = self.get_context_layer(attention_probs, value_layer)
-        outputs = (context_layer, attention_probs) if self.output_attentions \
-            else (context_layer,)
+        outputs = [context_layer, attention_probs] if self.output_attentions \
+            else [context_layer]
         return outputs
 
     def get_query_key_value(self,
