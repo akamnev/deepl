@@ -1,7 +1,8 @@
 """Bidirectional Encoder Representations from Transformers"""
 import torch
 from .base import BERTBase, LMMixin
-from ..layers.embeddings import (AbsolutePositionEmbeddings,
+from ..layers.embeddings import (WordEmbeddings,
+                                 AbsolutePositionEmbeddings,
                                  VectorTextFirstEmbeddings,
                                  VectorTextLastEmbeddings,
                                  VectorTextInsideEmbeddings)
@@ -24,19 +25,30 @@ __all__ = ['BERT',
 class BERT(BERTBase):
     def __init__(self, config):
         super().__init__(config)
-        self.embedding = AbsolutePositionEmbeddings(config.vocab_size,
-                                                    config.hidden_size,
-                                                    config.max_position_embedding,
-                                                    config.device,
-                                                    config.padding_idx,
-                                                    config.dropout_prob,
-                                                    config.layer_norm_eps)
+        if config.max_position_embedding > 0:
+            self.embedding = AbsolutePositionEmbeddings(config.vocab_size,
+                                                        config.hidden_size,
+                                                        config.max_position_embedding,
+                                                        config.device,
+                                                        config.padding_idx,
+                                                        config.dropout_prob,
+                                                        config.layer_norm_eps)
+        else:
+            self.embedding = WordEmbeddings(config.vocab_size,
+                                            config.hidden_size,
+                                            config.device,
+                                            config.padding_idx,
+                                            config.layer_norm_eps,
+                                            config.dropout_prob)
         self.encoder = BertEncoder(config.num_hidden_layers,
                                    config.num_attention_heads,
                                    config.hidden_size,
                                    config.intermediate_size,
+                                   config.half_width_key,
+                                   config.half_width_val,
                                    config.is_decoder,
                                    config.temperature,
+                                   config.dropout_head,
                                    config.dropout_prob,
                                    config.hidden_act,
                                    config.layer_norm_eps,
