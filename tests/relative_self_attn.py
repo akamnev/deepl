@@ -148,8 +148,8 @@ def naive_test_obj():
     obj_naive.query = obj_test.query
     obj_naive.key = obj_test.key
     obj_naive.value = obj_test.value
-    obj_naive.relative_pos_key.weight = nn.Parameter(obj_test.relative_pos_key.weight.detach().T)
-    obj_naive.relative_pos_val.weight = nn.Parameter(obj_test.relative_pos_val.detach())
+    obj_naive.relative_pos_key.weight = nn.Parameter(obj_test.relative_pos_key.weight.detach())
+    obj_naive.relative_pos_val.weight = nn.Parameter(obj_test.relative_pos_val.weight.detach().T)
 
     return obj_naive, obj_test, hidden_size
 

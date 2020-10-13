@@ -152,7 +152,6 @@ class BERTLanguageModelConfig(BERTConfig):
                          device,
                          temperature,
                          dropout_head,
-                         temperature,
                          dropout_prob,
                          layer_norm_eps,
                          padding_idx,

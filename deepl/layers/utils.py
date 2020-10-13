@@ -53,29 +53,3 @@ def prune_input_sequence(input_ids, max_length):
             ids = ids[:max_length]
         fval.append(ids)
     return fval
-
-
-class Conv1D(nn.Module):
-    """
-    1D-convolutional layer
-    Args:
-        nf (:obj:`int`): The number of output features.
-        nx (:obj:`int`): The number of input features.
-    """
-
-    def __init__(self, nf, nx, bias=False):
-        super().__init__()
-        self.nf = nf
-        w = torch.empty(nx, nf)
-        nn.init.normal_(w, std=0.02)
-        self.weight = nn.Parameter(w)
-        if bias:
-            self.bias = nn.Parameter(torch.zeros(nf))
-        else:
-            self.register_parameter('bias', None)
-
-    def forward(self, x):
-        x = torch.matmul(x, self.weight)
-        if self.bias is not None:
-            x = x + self.bias
-        return x

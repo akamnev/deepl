@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 from .activations import gelu, ACT2FN
-from .utils import get_min_value, Conv1D
+from .utils import get_min_value
 from ..models.config import PSS
 
 
@@ -40,15 +40,14 @@ class BertSelfAttention(nn.Module):
 
         self.half_width_key = half_width_key
         if half_width_key > 0:
-            self.relative_pos_key = Conv1D(2 * self.half_width_key + 1,
-                                           self.attention_head_size,
-                                           bias=False)
+            self.relative_pos_key = nn.Linear(self.attention_head_size,
+                                              2 * self.half_width_key + 1,
+                                              bias=False)
         self.half_width_val = half_width_val
         if half_width_val > 0:
-            w = torch.empty(2 * self.half_width_val + 1,
-                            self.attention_head_size)
-            nn.init.normal_(w, std=0.02)
-            self.relative_pos_val = nn.Parameter(w)
+            self.relative_pos_val = nn.Linear(2 * self.half_width_val + 1,
+                                              self.attention_head_size,
+                                              bias=False)
 
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
@@ -161,19 +160,8 @@ class BertSelfAttention(nn.Module):
                    if self.half_width_val <= i + j < n + self.half_width_val]
         attention_scores_pos[:, :, ids_a_v] = attention_probs.view(attention_probs.shape[:-2] + (-1,))[:, :, ids_att]
         attention_scores_pos = attention_scores_pos.view(attention_scores_pos.shape[:-1] + (n, w))
-        attention_scores_pos = torch.matmul(attention_scores_pos, self.relative_pos_val)
+        attention_scores_pos = self.relative_pos_val(attention_scores_pos)
         return attention_scores_pos
-
-    @staticmethod
-    def get_padded_idx_sequence(n, half_width):
-        ids = []
-        for i in range(n):
-            for j in range(n):
-                idx = i - j + half_width + 1
-                if idx < 1 or 2 * half_width + 1 < idx:
-                    idx = 0
-                ids.append(idx)
-        return ids
 
 
 class BertSelfOutput(nn.Module):
