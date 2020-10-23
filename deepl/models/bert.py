@@ -89,6 +89,8 @@ class LanguageModel(BERT, LMMixin):
         else:
             self.lm_head = LMHead(config.hidden_size,
                                   config.vocab_size)
+        self.loss_fct = torch.nn.CrossEntropyLoss(
+            ignore_index=self.config.ignore_index)
 
     def get_input_embeddings(self):
         return self.embedding.word_embeddings
@@ -129,9 +131,7 @@ class LanguageModel(BERT, LMMixin):
         outputs = [prediction_scores] + outputs[1:]
 
         if masked_lm_labels is not None:
-            loss_fct = torch.nn.CrossEntropyLoss(
-                ignore_index=self.config.ignore_index)
-            masked_lm_loss = loss_fct(
+            masked_lm_loss = self.loss_fct(
                 prediction_scores.view(-1, self.config.vocab_size),
                 masked_lm_labels.view(-1)
             )
