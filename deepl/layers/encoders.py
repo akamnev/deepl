@@ -135,7 +135,8 @@ class BertSelfAttention(nn.Module):
     def get_key_position_score(self, query_layer):
         n = query_layer.shape[-2]
         a_k = self.relative_pos_key(query_layer)
-        attention_scores_pos = torch.zeros(query_layer.shape[:2] + (n * n, ))
+        attention_scores_pos = torch.zeros(query_layer.shape[:2] + (n * n, ),
+                                           device=query_layer.device)
         ids_att = [i * n + j
                    for i in range(n)
                    for j in range(max(0, i-self.half_width_key), min(n, i + self.half_width_key + 1))]
@@ -151,7 +152,9 @@ class BertSelfAttention(nn.Module):
     def get_val_position_score(self, attention_probs):
         n = attention_probs.shape[-2]
         w = 2 * self.half_width_val + 1
-        attention_scores_pos = torch.zeros(attention_probs.shape[:2] + (n * w, ))
+        attention_scores_pos = torch.zeros(
+            attention_probs.shape[:2] + (n * w, ),
+            device=attention_probs.device)
         ids_att = [i * n + j
                    for i in range(n)
                    for j in range(max(0, i-self.half_width_val), min(n, i + self.half_width_val + 1))]
