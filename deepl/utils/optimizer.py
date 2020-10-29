@@ -332,7 +332,7 @@ class AdaSGDW(Optimizer):
                 p.sub_(exp_avg)
 
                 if group["weight_decay"] > 0.0:
-                    p.add_(p.data, alpha=-group["lr"] * group["weight_decay"])
+                    p.add_(p.data, alpha=-step_size * group["weight_decay"])
 
         return loss
 
