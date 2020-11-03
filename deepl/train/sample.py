@@ -74,17 +74,17 @@ def mask_token_with_unity_mlm(tokens, proba_unity, proba_token,
 
 
 def mask_token_with_unity_lm(tokens, proba_unity,
-                             id_sos, id_eos, id_ignore,
+                             id_bos, id_eos, id_ignore,
                              sampler=random_token_sample):
     sequence, labels = [], []
     for b in tokens:
         u = np.random.uniform()
         if u < proba_unity:
-            s = [id_sos] + b
+            s = [id_bos] + b
             v = b + [id_eos]
         else:
             n = sampler(b, size=1)[0]
-            s = [id_sos] + b[:n]
+            s = [id_bos] + b[:n]
             v = [id_ignore] * len(s)
             v[n] = b[n]
         sequence.append(s)
