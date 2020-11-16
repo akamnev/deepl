@@ -215,8 +215,8 @@ class BertAttention(nn.Module):
     ):
         self_outputs = self.self(hidden_states,
                                  attention_mask,
-                                 encoder_hidden_states,
-                                 encoder_attention_mask)
+                                 encoder_hidden_states=encoder_hidden_states,
+                                 encoder_attention_mask=encoder_attention_mask)
         attention_output = self.output(self_outputs[0], hidden_states)
         outputs = [attention_output] + self_outputs[1:]
         return outputs
