@@ -18,14 +18,16 @@ def kl_div(mu, sigma):
 
 
 class BertSelfOutput(nn.Module):
-    def __init__(self, hidden_size, dropout_prob=0.1, layer_norm_eps=1e-12):
+    def __init__(self, hidden_size, sigma_eps=1e-12):
         super().__init__()
         self.dense_mu = nn.Linear(hidden_size, hidden_size)
         self.dense_sigma = nn.Linear(hidden_size, hidden_size)
+        self.sigma_eps = sigma_eps
 
     def forward(self, hidden_states):
         mu = self.dense_mu(hidden_states)
         sigma = self.dense_sigma(hidden_states)
+        sigma = torch.abs(sigma) + self.sigma_eps
         kld = kl_div(mu, sigma)
         z = mu + sigma * torch.randn(sigma.shape,
                                      dtype=sigma.dtype,
@@ -54,9 +56,7 @@ class BertAttention(nn.Module):
                                       dropout_head=dropout_head,
                                       dropout_prob=dropout_prob,
                                       output_attentions=output_attentions)
-        self.output = BertSelfOutput(hidden_size=hidden_size,
-                                     dropout_prob=dropout_prob,
-                                     layer_norm_eps=layer_norm_eps)
+        self.output = BertSelfOutput(hidden_size=hidden_size)
 
     def forward(
         self,
@@ -81,7 +81,8 @@ class BertFeedForward(nn.Module):
                  hidden_size,
                  intermediate_size,
                  hidden_act='gelu',
-                 layer_norm_eps=1e-12):
+                 layer_norm_eps=1e-12,
+                 sigma_eps=1e-12):
         super().__init__()
         self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
         self.dense_mu = nn.Linear(hidden_size, intermediate_size)
@@ -91,12 +92,14 @@ class BertFeedForward(nn.Module):
             self.intermediate_act_fn = ACT2FN[hidden_act]
         else:
             self.intermediate_act_fn = hidden_act
+        self.sigma_eps = sigma_eps
 
     def forward(self, hidden_states):
         input_states = self.layer_norm(hidden_states)
         mu = self.dense_mu(input_states)
         mu = self.intermediate_act_fn(mu)
         sigma = self.dense_sigma(input_states)
+        sigma = torch.abs(sigma) + self.sigma_eps
         kld = kl_div(mu, sigma)
         intermediate_states = mu + sigma * torch.randn(sigma.shape,
                                                        dtype=sigma.dtype,
