@@ -48,6 +48,7 @@ ACT2FN = {
     "swish": swish,
     "gelu": gelu,
     "tanh": torch.tanh,
+    "sigmoid": torch.sigmoid,
     "gelu_new": gelu_new,
     "gelu_fast": gelu_fast,
     "mish": mish
