@@ -1,4 +1,3 @@
-import math
 import torch
 import torch.nn as nn
 
@@ -17,6 +16,15 @@ def kl_div(mu, sigma):
     return kld
 
 
+def rand_epanechnikov_trig(shape, device, dtype):
+    # https://stats.stackexchange.com/questions/6643/what-is-the-closed-form-solution-for-the-inverse-cdf-for-epanechnikov
+    xi = torch.rand(shape,
+                    dtype=dtype,
+                    device=device)
+    xi = 2 * torch.sin(torch.asin(2 * xi - 1) / 3)
+    return xi
+
+
 class BertSelfOutput(nn.Module):
     def __init__(self, hidden_size, sigma_eps=1e-12):
         super().__init__()
@@ -30,9 +38,14 @@ class BertSelfOutput(nn.Module):
         sigma = torch.abs(sigma) + self.sigma_eps
         kld = kl_div(mu, sigma)
         if self.training:
-            xi = torch.randn(sigma.shape,
-                             dtype=sigma.dtype,
-                             device=sigma.device)
+            xi = rand_epanechnikov_trig(
+                shape=sigma.shape,
+                dtype=sigma.dtype,
+                device=sigma.device)
+            # xi = torch.randn(sigma.shape,
+            #                  dtype=sigma.dtype,
+            #                  device=sigma.device)
+            # xi = torch.clamp(xi, min=-2.5, max=2.5)
             z = mu + sigma * xi
         else:
             z = mu
@@ -106,9 +119,14 @@ class BertFeedForward(nn.Module):
         sigma = torch.abs(sigma) + self.sigma_eps
         kld = kl_div(mu, sigma)
         if self.training:
-            xi = torch.randn(sigma.shape,
-                             dtype=sigma.dtype,
-                             device=sigma.device)
+            xi = rand_epanechnikov_trig(
+                shape=sigma.shape,
+                dtype=sigma.dtype,
+                device=sigma.device)
+            # xi = torch.randn(sigma.shape,
+            #                  dtype=sigma.dtype,
+            #                  device=sigma.device)
+            # xi = torch.clamp(xi, min=-2.5, max=2.5)
             intermediate_states = mu + sigma * xi
         else:
             intermediate_states = mu
