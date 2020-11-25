@@ -29,9 +29,13 @@ class BertSelfOutput(nn.Module):
         sigma = self.dense_sigma(hidden_states)
         sigma = torch.abs(sigma) + self.sigma_eps
         kld = kl_div(mu, sigma)
-        z = mu + sigma * torch.randn(sigma.shape,
-                                     dtype=sigma.dtype,
-                                     device=sigma.device)
+        if self.training:
+            xi = torch.randn(sigma.shape,
+                             dtype=sigma.dtype,
+                             device=sigma.device)
+            z = mu + sigma * xi
+        else:
+            z = mu
         return z, kld
 
 
@@ -101,9 +105,13 @@ class BertFeedForward(nn.Module):
         sigma = self.dense_sigma(input_states)
         sigma = torch.abs(sigma) + self.sigma_eps
         kld = kl_div(mu, sigma)
-        intermediate_states = mu + sigma * torch.randn(sigma.shape,
-                                                       dtype=sigma.dtype,
-                                                       device=sigma.device)
+        if self.training:
+            xi = torch.randn(sigma.shape,
+                             dtype=sigma.dtype,
+                             device=sigma.device)
+            intermediate_states = mu + sigma * xi
+        else:
+            intermediate_states = mu
         output_states = self.dense_output(intermediate_states)
         hidden_states = hidden_states + output_states
         return hidden_states, kld
