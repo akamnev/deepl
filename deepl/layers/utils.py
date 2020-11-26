@@ -53,3 +53,22 @@ def prune_input_sequence(input_ids, max_length):
             ids = ids[:max_length]
         fval.append(ids)
     return fval
+
+
+def kl_div(mu, sigma):
+    """
+    KL-divergence between a diagonal multivariate normal,
+    and a standard normal distribution (with zero mean and unit variance)
+    """
+    sigma_2 = sigma * sigma
+    kld = 0.5 * torch.mean(mu * mu + sigma_2 - torch.log(sigma_2) - 1.0)
+    return kld
+
+
+def rand_epanechnikov_trig(shape, device, dtype):
+    # https://stats.stackexchange.com/questions/6643/what-is-the-closed-form-solution-for-the-inverse-cdf-for-epanechnikov
+    xi = torch.rand(shape,
+                    dtype=dtype,
+                    device=device)
+    xi = 2 * torch.sin(torch.asin(2 * xi - 1) / 3)
+    return xi
