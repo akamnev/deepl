@@ -5,7 +5,12 @@ from ..layers.embeddings import (WordEmbeddings,
                                  AbsolutePositionEmbeddings,
                                  VectorTextFirstEmbeddings,
                                  VectorTextLastEmbeddings,
-                                 VectorTextInsideEmbeddings)
+                                 VectorTextInsideEmbeddings,
+                                 VectorTextFirstAbsolutePositionEmbeddings,
+                                 VectorTextLastAbsolutePositionEmbeddings,
+                                 VectorTextInsideAbsolutePositionEmbeddings
+
+)
 from ..layers.encoders import BertEncoder, LMHead, LMHeadCut
 from ..layers.utils import get_attention_mask
 from .config import (BERTLanguageModelConfig,
@@ -199,23 +204,39 @@ class VectorText(BERTBase, LMMixin):
     def __init__(self, config):
         super().__init__(config)
         if config.model_type == VPP.FIRST:
-            embeddings = VectorTextFirstEmbeddings
+            if config.max_position_embedding > 0:
+                embeddings = VectorTextFirstAbsolutePositionEmbeddings
+            else:
+                embeddings = VectorTextFirstEmbeddings
         elif config.model_type == VPP.LAST:
-            embeddings = VectorTextLastEmbeddings
+            if config.max_position_embedding > 0:
+                embeddings = VectorTextLastAbsolutePositionEmbeddings
+            else:
+                embeddings = VectorTextLastEmbeddings
         elif config.model_type == VPP.INSIDE:
-            embeddings = VectorTextInsideEmbeddings
+            if config.max_position_embedding > 0:
+                embeddings = VectorTextInsideAbsolutePositionEmbeddings
+            else:
+                embeddings = VectorTextInsideEmbeddings
         else:
             raise ValueError(f'{config.model_type} not recognized. `model_type`'
                              f' should be set to either `FIRST`, `LAST`, '
                              f'or `INSIDE`')
-
-        self.embedding = embeddings(config.vocab_size,
-                                    config.hidden_size,
-                                    config.max_position_embedding,
-                                    config.device,
-                                    config.padding_idx,
-                                    config.dropout_prob,
-                                    config.layer_norm_eps)
+        if config.max_position_embedding > 0:
+            self.embedding = embeddings(config.vocab_size,
+                                        config.hidden_size,
+                                        config.max_position_embedding,
+                                        config.device,
+                                        config.padding_idx,
+                                        config.dropout_prob,
+                                        config.layer_norm_eps)
+        else:
+            self.embedding = embeddings(config.vocab_size,
+                                        config.hidden_size,
+                                        config.device,
+                                        config.padding_idx,
+                                        config.layer_norm_eps,
+                                        config.dropout_prob)
         self.encoder = BertEncoder(config.num_hidden_layers,
                                    config.num_attention_heads,
                                    config.hidden_size,
