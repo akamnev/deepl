@@ -102,7 +102,7 @@ class BertSelfAttention(nn.Module):
     def get_attention_probs(self, query_layer, key_layer, attention_mask):
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
         if self.half_width_key > 0:
-            attention_scores_pos = self.get_key_position_score(query_layer)
+            attention_scores_pos = self.get_key_position_score(query_layer, key_layer)
             attention_scores = attention_scores + attention_scores_pos
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         if self.temperature != 1.0:
@@ -132,36 +132,38 @@ class BertSelfAttention(nn.Module):
             attention_probs = attention_probs * mask
         return attention_probs
 
-    def get_key_position_score(self, query_layer):
+    def get_key_position_score(self, query_layer, key_layer):
         n = query_layer.shape[-2]
+        m = key_layer.shape[-2]
         a_k = self.relative_pos_key(query_layer)
-        attention_scores_pos = torch.zeros(query_layer.shape[:2] + (n * n, ),
+        attention_scores_pos = torch.zeros(query_layer.shape[:2] + (n * m, ),
                                            device=query_layer.device)
-        ids_att = [i * n + j
+        ids_att = [i * m + j
                    for i in range(n)
-                   for j in range(max(0, i-self.half_width_key), min(n, i + self.half_width_key + 1))]
+                   for j in range(max(0, i-self.half_width_key), min(m, i + self.half_width_key + 1))]
         ids_a_k = [i * (2 * self.half_width_key + 1) + j
                    for i in range(n)
                    for j in range(2 * self.half_width_key + 1)
-                   if self.half_width_key <= i + j < n + self.half_width_key]
+                   if self.half_width_key <= i + j < m + self.half_width_key]
         a_k = a_k.view(a_k.shape[:-2] + (-1, ))[:, :, ids_a_k]
         attention_scores_pos[:, :, ids_att] = a_k
-        attention_scores_pos = attention_scores_pos.view(attention_scores_pos.shape[:-1] + (n, n))
+        attention_scores_pos = attention_scores_pos.view(attention_scores_pos.shape[:-1] + (n, m))
         return attention_scores_pos
 
     def get_val_position_score(self, attention_probs):
         n = attention_probs.shape[-2]
+        m = attention_probs.shape[-1]
         w = 2 * self.half_width_val + 1
         attention_scores_pos = torch.zeros(
             attention_probs.shape[:2] + (n * w, ),
             device=attention_probs.device)
-        ids_att = [i * n + j
+        ids_att = [i * m + j
                    for i in range(n)
-                   for j in range(max(0, i-self.half_width_val), min(n, i + self.half_width_val + 1))]
+                   for j in range(max(0, i-self.half_width_val), min(m, i + self.half_width_val + 1))]
         ids_a_v = [i * (2 * self.half_width_val + 1) + j
                    for i in range(n)
                    for j in range(2 * self.half_width_val + 1)
-                   if self.half_width_val <= i + j < n + self.half_width_val]
+                   if self.half_width_val <= i + j < m + self.half_width_val]
         attention_scores_pos[:, :, ids_a_v] = attention_probs.view(attention_probs.shape[:-2] + (-1,))[:, :, ids_att]
         attention_scores_pos = attention_scores_pos.view(attention_scores_pos.shape[:-1] + (n, w))
         attention_scores_pos = self.relative_pos_val(attention_scores_pos)
