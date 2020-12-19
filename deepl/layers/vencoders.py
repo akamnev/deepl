@@ -8,10 +8,12 @@ from .utils import rand_epanechnikov_trig, kl_div
 
 
 class BertSelfOutput(nn.Module):
-    def __init__(self, hidden_size, sigma_eps=1e-12):
+    def __init__(self, hidden_size, input_size=None, sigma_eps=1e-12):
         super().__init__()
-        self.dense_mu = nn.Linear(hidden_size, hidden_size)
-        self.dense_sigma = nn.Linear(hidden_size, hidden_size)
+        if input_size is None:
+            input_size = hidden_size
+        self.dense_mu = nn.Linear(input_size, hidden_size)
+        self.dense_sigma = nn.Linear(input_size, hidden_size)
         self.sigma_eps = sigma_eps
 
     def forward(self, hidden_states):
