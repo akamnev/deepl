@@ -15,13 +15,14 @@ class BertSelfOutput(nn.Module):
         self.dense_mu = nn.Linear(input_size, hidden_size)
         self.dense_sigma = nn.Linear(input_size, hidden_size)
         self.sigma_eps = sigma_eps
+        self.use_vae = True
 
     def forward(self, hidden_states):
         mu = self.dense_mu(hidden_states)
         sigma = self.dense_sigma(hidden_states)
         sigma = torch.abs(sigma) + self.sigma_eps
         kld = kl_div(mu, sigma)
-        if self.training:
+        if self.training and self.use_vae:
             xi = rand_epanechnikov_trig(
                 shape=sigma.shape,
                 dtype=sigma.dtype,
@@ -94,6 +95,7 @@ class BertFeedForward(nn.Module):
         else:
             self.intermediate_act_fn = hidden_act
         self.sigma_eps = sigma_eps
+        self.use_vae = True
 
     def forward(self, hidden_states):
         input_states = self.layer_norm(hidden_states)
@@ -102,7 +104,7 @@ class BertFeedForward(nn.Module):
         sigma = self.dense_sigma(input_states)
         sigma = torch.abs(sigma) + self.sigma_eps
         kld = kl_div(mu, sigma)
-        if self.training:
+        if self.training and self.use_vae:
             xi = rand_epanechnikov_trig(
                 shape=sigma.shape,
                 dtype=sigma.dtype,
