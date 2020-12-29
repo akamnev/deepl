@@ -19,21 +19,21 @@ class BertSelfOutput(nn.Module):
 
     def forward(self, hidden_states):
         mu = self.dense_mu(hidden_states)
-        sigma = self.dense_sigma(hidden_states)
-        sigma = torch.abs(sigma) + self.sigma_eps
-        kld = kl_div(mu, sigma)
-        if self.training and self.use_vae:
-            xi = rand_epanechnikov_trig(
-                shape=sigma.shape,
-                dtype=sigma.dtype,
-                device=sigma.device)
-            # xi = torch.randn(sigma.shape,
-            #                  dtype=sigma.dtype,
-            #                  device=sigma.device)
-            # xi = torch.clamp(xi, min=-2.5, max=2.5)
-            z = mu + sigma * xi
+        if self.use_vae:
+            sigma = self.dense_sigma(hidden_states)
+            sigma = torch.abs(sigma) + self.sigma_eps
+            kld = kl_div(mu, sigma)
+            if self.training:
+                xi = rand_epanechnikov_trig(
+                    shape=sigma.shape,
+                    dtype=sigma.dtype,
+                    device=sigma.device)
+                z = mu + sigma * xi
+            else:
+                z = mu
         else:
             z = mu
+            kld = torch.tensor(-1.0)
         return z, kld
 
 
@@ -101,21 +101,21 @@ class BertFeedForward(nn.Module):
         input_states = self.layer_norm(hidden_states)
         mu = self.dense_mu(input_states)
         mu = self.intermediate_act_fn(mu)
-        sigma = self.dense_sigma(input_states)
-        sigma = torch.abs(sigma) + self.sigma_eps
-        kld = kl_div(mu, sigma)
-        if self.training and self.use_vae:
-            xi = rand_epanechnikov_trig(
-                shape=sigma.shape,
-                dtype=sigma.dtype,
-                device=sigma.device)
-            # xi = torch.randn(sigma.shape,
-            #                  dtype=sigma.dtype,
-            #                  device=sigma.device)
-            # xi = torch.clamp(xi, min=-2.5, max=2.5)
-            intermediate_states = mu + sigma * xi
+        if self.use_vae:
+            sigma = self.dense_sigma(input_states)
+            sigma = torch.abs(sigma) + self.sigma_eps
+            kld = kl_div(mu, sigma)
+            if self.training:
+                xi = rand_epanechnikov_trig(
+                    shape=sigma.shape,
+                    dtype=sigma.dtype,
+                    device=sigma.device)
+                intermediate_states = mu + sigma * xi
+            else:
+                intermediate_states = mu
         else:
             intermediate_states = mu
+            kld = torch.tensor(-1.0)
         output_states = self.dense_output(intermediate_states)
         hidden_states = hidden_states + output_states
         return hidden_states, kld
