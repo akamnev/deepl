@@ -462,3 +462,103 @@ class LMHeadCut(LMHead):
             features = features[mask]
         x = super().forward(features)
         return x, labels
+
+
+class GraphConvEncoder(nn.Module):
+    def __init__(self,
+                 num_hidden_layers,
+                 num_attention_heads,
+                 hidden_size,
+                 half_width_key=0,
+                 half_width_val=0,
+                 dropout_head=0.0,
+                 dropout_prob=0.1,
+                 layer_norm_eps=1e-12,
+                 cross_layer_parameter_sharing=PSS.NO_PARAMETERS_SHARING,
+                 output_attentions=False,
+                 output_hidden_states=False):
+        super().__init__()
+        self.output_attentions = output_attentions
+        self.output_hidden_states = output_hidden_states
+        if cross_layer_parameter_sharing == PSS.NO_PARAMETERS_SHARING:
+            self.layer = nn.ModuleList([BertAttention(
+                hidden_size=hidden_size,
+                num_attention_heads=num_attention_heads,
+                half_width_key=half_width_key,
+                half_width_val=half_width_val,
+                temperature=1.0,
+                dropout_head=dropout_head,
+                dropout_prob=dropout_prob,
+                layer_norm_eps=layer_norm_eps,
+                output_attentions=output_attentions)
+                    for _ in range(num_hidden_layers)])
+        elif cross_layer_parameter_sharing == PSS.ALL_PARAMETERS_SHARING:
+            self.single_layer = BertAttention(
+                hidden_size=hidden_size,
+                num_attention_heads=num_attention_heads,
+                half_width_key=half_width_key,
+                half_width_val=half_width_val,
+                temperature=1.0,
+                dropout_head=dropout_head,
+                dropout_prob=dropout_prob,
+                layer_norm_eps=layer_norm_eps,
+                output_attentions=output_attentions)
+        else:
+            raise ValueError(f'{cross_layer_parameter_sharing} not recognized.'
+                             f' `cross_layer_parameter_sharing` '
+                             f' should be set to either '
+                             f'`PSS.NO_PARAMETERS_SHARING`, '
+                             f'`PSS.ALL_PARAMETERS_SHARING`.')
+        self.num_hidden_layers = num_hidden_layers
+        self.cross_layer_parameter_sharing = cross_layer_parameter_sharing
+
+    def forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        encoder_hidden_states=None,
+        encoder_attention_mask=None
+    ):
+        all_hidden_states = []
+        all_attentions = []
+
+        if self.cross_layer_parameter_sharing == PSS.NO_PARAMETERS_SHARING:
+            layer = self.layer
+        elif self.cross_layer_parameter_sharing == PSS.ALL_PARAMETERS_SHARING:
+            layer = [self.single_layer for _ in range(self.num_hidden_layers)]
+        else:
+            raise ValueError(f'{self.cross_layer_parameter_sharing} not '
+                             f'recognized. `cross_layer_parameter_sharing` '
+                             f' should be set to either `None`,'
+                             f' `all_parameters_sharing`.')
+
+        for layer_module in layer:
+
+            if self.output_hidden_states:
+                all_hidden_states.append(hidden_states)
+
+            layer_outputs = layer_module(hidden_states,
+                                         attention_mask,
+                                         encoder_hidden_states,
+                                         encoder_attention_mask)
+            hidden_states = layer_outputs[0]
+
+            if self.output_attentions:
+                all_attentions.extend(layer_outputs[1:])
+
+        # Add last layer
+        if self.output_hidden_states:
+            all_hidden_states.append(hidden_states)
+
+        outputs = [hidden_states]
+        if self.output_hidden_states:
+            all_hidden_states = [tensor.unsqueeze(dim=0)
+                                 for tensor in all_hidden_states]
+            all_hidden_states = torch.cat(all_hidden_states, dim=0)
+            outputs.append(all_hidden_states)
+        if self.output_attentions:
+            all_attentions = [tensor.unsqueeze(dim=0)
+                              for tensor in all_attentions]
+            all_attentions = torch.cat(all_attentions, dim=0)
+            outputs.append(all_attentions)
+        return outputs

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from .activations import gelu, ACT2FN
+from .activations import ACT2FN
 from .encoders import BertSelfAttention
 from ..models.config import PSS
 from .utils import rand_epanechnikov_trig, kl_div
