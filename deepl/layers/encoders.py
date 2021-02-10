@@ -464,6 +464,49 @@ class LMHeadCut(LMHead):
         return x, labels
 
 
+class GraphAttention(nn.Module):
+    def __init__(self,
+                 hidden_size,
+                 num_attention_heads,
+                 half_width_key=0,
+                 half_width_val=0,
+                 temperature=1.0,
+                 dropout_head=0.0,
+                 dropout_prob=0.1,
+                 layer_norm_eps=1e-12,
+                 output_attentions=False):
+        super().__init__()
+        self.self = BertSelfAttention(hidden_size=hidden_size,
+                                      num_attention_heads=num_attention_heads,
+                                      half_width_key=half_width_key,
+                                      half_width_val=half_width_val,
+                                      temperature=temperature,
+                                      dropout_head=dropout_head,
+                                      dropout_prob=dropout_prob,
+                                      output_attentions=output_attentions)
+        self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
+        self.dropout = nn.Dropout(dropout_prob)
+        self.dense = nn.Linear(hidden_size, hidden_size)
+
+    def forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        encoder_hidden_states=None,
+        encoder_attention_mask=None
+    ):
+        hidden_states = self.layer_norm(hidden_states)
+        hidden_states = self.dropout(hidden_states)
+        self_outputs = self.self(hidden_states,
+                                 attention_mask,
+                                 encoder_hidden_states=encoder_hidden_states,
+                                 encoder_attention_mask=encoder_attention_mask)
+        attention_output = self.dense(self_outputs[0])
+        attention_output = attention_output + hidden_states
+        outputs = [attention_output] + self_outputs[1:]
+        return outputs
+
+
 class GraphConvEncoder(nn.Module):
     def __init__(self,
                  num_hidden_layers,
@@ -481,7 +524,7 @@ class GraphConvEncoder(nn.Module):
         self.output_attentions = output_attentions
         self.output_hidden_states = output_hidden_states
         if cross_layer_parameter_sharing == PSS.NO_PARAMETERS_SHARING:
-            self.layer = nn.ModuleList([BertAttention(
+            self.layer = nn.ModuleList([GraphAttention(
                 hidden_size=hidden_size,
                 num_attention_heads=num_attention_heads,
                 half_width_key=half_width_key,
@@ -493,7 +536,7 @@ class GraphConvEncoder(nn.Module):
                 output_attentions=output_attentions)
                     for _ in range(num_hidden_layers)])
         elif cross_layer_parameter_sharing == PSS.ALL_PARAMETERS_SHARING:
-            self.single_layer = BertAttention(
+            self.single_layer = GraphAttention(
                 hidden_size=hidden_size,
                 num_attention_heads=num_attention_heads,
                 half_width_key=half_width_key,
