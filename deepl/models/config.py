@@ -31,6 +31,15 @@ class VAEType(IntEnumBase):
     NORMAL_TANH_ABS = auto()
 
 
+def set_config_attrib(obj, name, value):
+    if hasattr(obj, name):
+        setattr(obj, name, value)
+    for child in dir(obj):
+        child = getattr(obj, child)
+        if isinstance(child, ConfigBase):
+            set_config_attrib(child, name, value)
+
+
 class ConfigBase:
     def to_dict(self):
         output = copy.deepcopy(self.__dict__)
@@ -50,8 +59,7 @@ class ConfigBase:
             config = cls(**json.load(fp))
 
         for key, value in kwargs.items():
-            if hasattr(config, key):
-                setattr(config, key, value)
+            set_config_attrib(config, key, value)
         return config
 
     def __repr__(self):

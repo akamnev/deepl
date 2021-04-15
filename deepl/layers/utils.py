@@ -65,6 +65,20 @@ def kl_div(mu, sigma):
     return kld
 
 
+def kld_gaussian(mu, log_sigma, nu=0.0, rho=1.0):
+    """
+    KL-divergence between a diagonal multivariate normal,
+    and a standard normal distribution
+    """
+    device = mu.device
+    nu = torch.as_tensor(nu, device=device)
+    rho = torch.as_tensor(rho, device=device)
+    delta_variance = 2.0 * (log_sigma - torch.log(rho))
+    variance_term = torch.sum(torch.exp(delta_variance) - delta_variance)
+    mean_term = torch.sum((mu - nu) ** 2 / rho)
+    return 0.5 * (mean_term + variance_term - 1.0)
+
+
 def rand_epanechnikov_trig(shape, device, dtype):
     # https://stats.stackexchange.com/questions/6643/what-is-the-closed-form-solution-for-the-inverse-cdf-for-epanechnikov
     xi = torch.rand(shape,

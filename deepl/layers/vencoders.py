@@ -1,10 +1,12 @@
+import math
 import torch
 import torch.nn as nn
+from torch.nn import functional as F
 
 from .activations import ACT2FN
 from .encoders import BertSelfAttention
 from ..models.config import PSS
-from .utils import rand_epanechnikov_trig, kl_div
+from .utils import kld_gaussian
 
 
 class BertSelfOutput(nn.Module):
@@ -12,29 +14,27 @@ class BertSelfOutput(nn.Module):
         super().__init__()
         if input_size is None:
             input_size = hidden_size
-        self.dense_mu = nn.Linear(input_size, hidden_size)
-        self.dense_sigma = nn.Linear(input_size, hidden_size)
+        self.dense = nn.Linear(input_size, hidden_size)
+        self.log_sigma = nn.Parameter(torch.Tensor(hidden_size, input_size))
+        self.log_sigma.data.fill_(-1.0 - 0.5*math.log(input_size))
         self.sigma_eps = sigma_eps
-        self.use_vae = True
+        self.use_var = True
 
     def forward(self, hidden_states):
-        mu = self.dense_mu(hidden_states)
-        if self.use_vae:
-            sigma = self.dense_sigma(hidden_states)
-            sigma = torch.abs(sigma) + self.sigma_eps
-            kld = kl_div(mu, sigma)
-            if self.training:
-                xi = rand_epanechnikov_trig(
-                    shape=sigma.shape,
-                    dtype=sigma.dtype,
-                    device=sigma.device)
-                z = mu + sigma * xi
-            else:
-                z = mu
-        else:
-            z = mu
-            kld = torch.tensor(-1.0)
-        return z, kld
+        mu = self.dense(hidden_states)
+        if self.training and self.use_var:
+            sigma_square = torch.exp(2.0 * self.log_sigma)
+            variance = F.linear(hidden_states**2, sigma_square)
+            variance = torch.sqrt(variance) + self.sigma_eps
+            xi = torch.randn(variance.shape,
+                             dtype=variance.dtype,
+                             device=variance.device)
+            xi = torch.fmod(xi, 2.5)
+            mu = mu + variance * xi
+        return mu
+
+    def kld_gaussian(self, nu=0.0, rho=1.0):
+        return kld_gaussian(self.dense.weight, self.log_sigma, nu=nu, rho=rho)
 
 
 class BertAttention(nn.Module):
@@ -72,9 +72,9 @@ class BertAttention(nn.Module):
                                  attention_mask,
                                  encoder_hidden_states=encoder_hidden_states,
                                  encoder_attention_mask=encoder_attention_mask)
-        attention_outputs, kld = self.output(self_outputs[0])
+        attention_outputs = self.output(self_outputs[0])
         hidden_states = hidden_states + attention_outputs
-        outputs = [hidden_states] + [kld] + self_outputs[1:]
+        outputs = [hidden_states] + self_outputs[1:]
         return outputs
 
 
@@ -87,38 +87,51 @@ class BertFeedForward(nn.Module):
                  sigma_eps=1e-12):
         super().__init__()
         self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
-        self.dense_mu = nn.Linear(hidden_size, intermediate_size)
-        self.dense_sigma = nn.Linear(hidden_size, intermediate_size)
+        self.dense_input = nn.Linear(hidden_size, intermediate_size)
+        self.log_sigma_input = nn.Parameter(torch.Tensor(intermediate_size, hidden_size))
+        self.log_sigma_input.data.fill_(-1.0 - 0.5*math.log(hidden_size))
         self.dense_output = nn.Linear(intermediate_size, hidden_size)
+        self.log_sigma_output = nn.Parameter(torch.Tensor(hidden_size, intermediate_size))
+        self.log_sigma_output.data.fill_(-1.0 - 0.5*math.log(intermediate_size))
         if isinstance(hidden_act, str):
             self.intermediate_act_fn = ACT2FN[hidden_act]
         else:
             self.intermediate_act_fn = hidden_act
         self.sigma_eps = sigma_eps
-        self.use_vae = True
+        self.use_var = True
 
     def forward(self, hidden_states):
         input_states = self.layer_norm(hidden_states)
-        mu = self.dense_mu(input_states)
-        mu = self.intermediate_act_fn(mu)
-        if self.use_vae:
-            sigma = self.dense_sigma(input_states)
-            sigma = torch.abs(sigma) + self.sigma_eps
-            kld = kl_div(mu, sigma)
-            if self.training:
-                xi = rand_epanechnikov_trig(
-                    shape=sigma.shape,
-                    dtype=sigma.dtype,
-                    device=sigma.device)
-                intermediate_states = mu + sigma * xi
-            else:
-                intermediate_states = mu
-        else:
-            intermediate_states = mu
-            kld = torch.tensor(-1.0)
+        intermediate_states = self.dense_input(input_states)
+        if self.training and self.use_var:
+            sigma_square = torch.exp(2.0 * self.log_sigma_input)
+            variance = F.linear(hidden_states**2, sigma_square)
+            variance = torch.sqrt(variance) + self.sigma_eps
+            xi = torch.randn(variance.shape,
+                             dtype=variance.dtype,
+                             device=variance.device)
+            xi = torch.fmod(xi, 2.5)
+            intermediate_states = intermediate_states + variance * xi
+        intermediate_states = self.intermediate_act_fn(intermediate_states)
         output_states = self.dense_output(intermediate_states)
+        if self.training and self.use_var:
+            sigma_square = torch.exp(2.0 * self.log_sigma_output)
+            variance = F.linear(intermediate_states**2, sigma_square)
+            variance = torch.sqrt(variance) + self.sigma_eps
+            xi = torch.randn(variance.shape,
+                             dtype=variance.dtype,
+                             device=variance.device)
+            xi = torch.fmod(xi, 2.5)
+            output_states = output_states + variance * xi
         hidden_states = hidden_states + output_states
-        return hidden_states, kld
+        return hidden_states
+
+    def kld_gaussian(self, nu=0.0, rho=1.0):
+        kld_input = kld_gaussian(
+            self.dense_input.weight, self.log_sigma_input, nu=nu, rho=rho)
+        kld_output = kld_gaussian(
+            self.dense_output.weight, self.log_sigma_output, nu=nu, rho=rho)
+        return kld_input + kld_output
 
 
 class BertLayer(nn.Module):
@@ -169,8 +182,7 @@ class BertLayer(nn.Module):
     ):
         self_attention_outputs = self.attention(hidden_states, attention_mask)
         attention_output = self_attention_outputs[0]
-        attention_kld = [self_attention_outputs[1]]
-        outputs = self_attention_outputs[2:]
+        outputs = self_attention_outputs[1:]
 
         if self.is_decoder and encoder_hidden_states is not None:
             cross_attention_outputs = self.cross_attention(attention_output,
@@ -179,12 +191,10 @@ class BertLayer(nn.Module):
                                                            encoder_attention_mask
                                                            )
             attention_output = cross_attention_outputs[0]
-            attention_kld += [cross_attention_outputs[1]]
-            outputs += cross_attention_outputs[2:]
+            outputs += cross_attention_outputs[1:]
 
         layer_output, ff_kld = self.feedforward(attention_output)
-        bert_kld = attention_kld + [ff_kld]
-        outputs = [layer_output] + [bert_kld] + [outputs]
+        outputs = [layer_output] + [outputs]
         return outputs
 
 
@@ -252,7 +262,6 @@ class BertEncoder(nn.Module):
         encoder_attention_mask=None
     ):
         all_hidden_states = []
-        all_kld = []
         all_attentions = []
 
         if self.cross_layer_parameter_sharing == PSS.NO_PARAMETERS_SHARING:
@@ -275,16 +284,15 @@ class BertEncoder(nn.Module):
                                          encoder_hidden_states,
                                          encoder_attention_mask)
             hidden_states = layer_outputs[0]
-            all_kld.extend(layer_outputs[1])
 
             if self.output_attentions:
-                all_attentions.extend(layer_outputs[2])
+                all_attentions.extend(layer_outputs[1])
 
         # Add last layer
         if self.output_hidden_states:
             all_hidden_states.append(hidden_states)
 
-        outputs = [hidden_states, torch.stack(all_kld, dim=0)]
+        outputs = [hidden_states]
         if self.output_hidden_states:
             all_hidden_states = [tensor.unsqueeze(dim=0)
                                  for tensor in all_hidden_states]
