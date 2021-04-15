@@ -78,7 +78,6 @@ class BERTConfig(ConfigBase):
                  half_width_val=0,
                  is_decoder=False,
                  device='cpu',
-                 temperature=1.0,
                  dropout_head=0.0,
                  dropout_prob=0.1,
                  layer_norm_eps=1e-12,
@@ -98,7 +97,6 @@ class BERTConfig(ConfigBase):
         self.half_width_val = half_width_val
         self.is_decoder = is_decoder
         self.device = device
-        self.temperature = temperature
         self.dropout_head = dropout_head
         self.dropout_prob = dropout_prob
         self.layer_norm_eps = layer_norm_eps
@@ -135,7 +133,6 @@ class BERTLanguageModelConfig(BERTConfig):
                  half_width_val=0,
                  device='cpu',
                  is_decoder=False,
-                 temperature=1.0,
                  dropout_head=0.0,
                  dropout_prob=0.1,
                  layer_norm_eps=1e-12,
@@ -158,7 +155,6 @@ class BERTLanguageModelConfig(BERTConfig):
                          half_width_val,
                          is_decoder,
                          device,
-                         temperature,
                          dropout_head,
                          dropout_prob,
                          layer_norm_eps,
@@ -186,7 +182,6 @@ class VectorTextBERTConfig(BERTLanguageModelConfig):
                  model_type=VPP.INSIDE,
                  device='cpu',
                  is_decoder=False,
-                 temperature=1.0,
                  dropout_head=0.0,
                  dropout_prob=0.1,
                  layer_norm_eps=1e-12,
@@ -209,7 +204,6 @@ class VectorTextBERTConfig(BERTLanguageModelConfig):
                          half_width_val,
                          device,
                          is_decoder,
-                         temperature,
                          dropout_head,
                          dropout_prob,
                          layer_norm_eps,
@@ -244,7 +238,6 @@ class TextVectorVAEConfig(BERTConfig):
                  half_width_val=0,
                  is_decoder=False,
                  device='cpu',
-                 temperature=1.0,
                  dropout_head=0.0,
                  dropout_prob=0.1,
                  layer_norm_eps=1e-12,
@@ -265,7 +258,6 @@ class TextVectorVAEConfig(BERTConfig):
                          half_width_val,
                          is_decoder,
                          device,
-                         temperature,
                          dropout_head,
                          dropout_prob,
                          layer_norm_eps,

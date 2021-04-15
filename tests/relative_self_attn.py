@@ -16,7 +16,6 @@ class BertSelfAttentionNaiveImpl(nn.Module):
                  half_width_val,
                  dropout_prob=0.0,
                  dropout_head=0.0,
-                 temperature=1.0,
                  output_attentions=False):
         super().__init__()
         if hidden_size % num_attention_heads != 0:
@@ -35,7 +34,6 @@ class BertSelfAttentionNaiveImpl(nn.Module):
         self.value = nn.Linear(hidden_size, self.all_head_size)
 
         self.dropout_prob = dropout_prob
-        self.temperature = temperature
 
         # 0 for padding
         self.half_width_key = half_width_key
@@ -80,8 +78,6 @@ class BertSelfAttentionNaiveImpl(nn.Module):
             attention_scores = attention_scores + extended_attention_mask
 
         # attention_scores = self.dropout_attention_scores(attention_scores)
-        if self.temperature != 1.0:
-            attention_scores = attention_scores / self.temperature
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
         return attention_probs
 
@@ -138,7 +134,6 @@ def naive_test_obj():
         'num_attention_heads': head_number,
         'half_width_key': half_width_key,
         'half_width_val': half_width_value,
-        'temperature': 1.0,
         'dropout_head': 0.0,
         'dropout_prob': 0.0,
         'output_attentions': False

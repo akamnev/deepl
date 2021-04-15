@@ -13,7 +13,6 @@ class BertSelfAttention(nn.Module):
                  num_attention_heads,
                  half_width_key=0,
                  half_width_val=0,
-                 temperature=1.0,
                  dropout_head=0.0,
                  dropout_prob=0.0,
                  output_attentions=False):
@@ -36,7 +35,6 @@ class BertSelfAttention(nn.Module):
 
         self.dropout_prob = dropout_prob
         self.dropout_head = dropout_head
-        self.temperature = temperature
 
         self.half_width_key = half_width_key
         if half_width_key > 0:
@@ -105,8 +103,6 @@ class BertSelfAttention(nn.Module):
             attention_scores_pos = self.get_key_position_score(query_layer, key_layer)
             attention_scores = attention_scores + attention_scores_pos
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-        if self.temperature != 1.0:
-            attention_scores = attention_scores / self.temperature
         if attention_mask is not None:
             extended_attention_mask = 1.0 - attention_mask[:, None, None, :]
             extended_attention_mask *= get_min_value(extended_attention_mask)
@@ -190,7 +186,6 @@ class BertAttention(nn.Module):
                  num_attention_heads,
                  half_width_key=0,
                  half_width_val=0,
-                 temperature=1.0,
                  dropout_head=0.0,
                  dropout_prob=0.1,
                  layer_norm_eps=1e-12,
@@ -200,7 +195,6 @@ class BertAttention(nn.Module):
                                       num_attention_heads=num_attention_heads,
                                       half_width_key=half_width_key,
                                       half_width_val=half_width_val,
-                                      temperature=temperature,
                                       dropout_head=dropout_head,
                                       dropout_prob=dropout_prob,
                                       output_attentions=output_attentions)
@@ -262,7 +256,6 @@ class BertLayer(nn.Module):
                  half_width_key=0,
                  half_width_val=0,
                  is_decoder=False,
-                 temperature=1.0,
                  dropout_head=0.0,
                  dropout_prob=0.1,
                  hidden_act='gelu',
@@ -273,7 +266,6 @@ class BertLayer(nn.Module):
                                        num_attention_heads=num_attention_heads,
                                        half_width_key=half_width_key,
                                        half_width_val=half_width_val,
-                                       temperature=temperature,
                                        dropout_head=dropout_head,
                                        dropout_prob=dropout_prob,
                                        layer_norm_eps=layer_norm_eps,
@@ -284,7 +276,6 @@ class BertLayer(nn.Module):
                                                  num_attention_heads=num_attention_heads,
                                                  half_width_key=half_width_key,
                                                  half_width_val=half_width_val,
-                                                 temperature=temperature,
                                                  dropout_head=dropout_head,
                                                  dropout_prob=dropout_prob,
                                                  layer_norm_eps=layer_norm_eps,
@@ -332,7 +323,6 @@ class BertEncoder(nn.Module):
                  half_width_key=0,
                  half_width_val=0,
                  is_decoder=False,
-                 temperature=1.0,
                  dropout_head=0.0,
                  dropout_prob=0.1,
                  hidden_act='gelu',
@@ -350,7 +340,6 @@ class BertEncoder(nn.Module):
                                                   half_width_key=half_width_key,
                                                   half_width_val=half_width_val,
                                                   is_decoder=is_decoder,
-                                                  temperature=temperature,
                                                   dropout_head=dropout_head,
                                                   dropout_prob=dropout_prob,
                                                   hidden_act=hidden_act,
@@ -364,7 +353,6 @@ class BertEncoder(nn.Module):
                                           half_width_key=half_width_key,
                                           half_width_val=half_width_val,
                                           is_decoder=is_decoder,
-                                          temperature=temperature,
                                           dropout_head=dropout_head,
                                           dropout_prob=dropout_prob,
                                           hidden_act=hidden_act,
@@ -470,7 +458,6 @@ class GraphAttention(nn.Module):
                  num_attention_heads,
                  half_width_key=0,
                  half_width_val=0,
-                 temperature=1.0,
                  dropout_head=0.0,
                  dropout_prob=0.1,
                  layer_norm_eps=1e-12,
@@ -480,7 +467,6 @@ class GraphAttention(nn.Module):
                                       num_attention_heads=num_attention_heads,
                                       half_width_key=half_width_key,
                                       half_width_val=half_width_val,
-                                      temperature=temperature,
                                       dropout_head=dropout_head,
                                       dropout_prob=dropout_prob,
                                       output_attentions=output_attentions)
@@ -529,7 +515,6 @@ class GraphConvEncoder(nn.Module):
                 num_attention_heads=num_attention_heads,
                 half_width_key=half_width_key,
                 half_width_val=half_width_val,
-                temperature=1.0,
                 dropout_head=dropout_head,
                 dropout_prob=dropout_prob,
                 layer_norm_eps=layer_norm_eps,
@@ -541,7 +526,6 @@ class GraphConvEncoder(nn.Module):
                 num_attention_heads=num_attention_heads,
                 half_width_key=half_width_key,
                 half_width_val=half_width_val,
-                temperature=1.0,
                 dropout_head=dropout_head,
                 dropout_prob=dropout_prob,
                 layer_norm_eps=layer_norm_eps,
