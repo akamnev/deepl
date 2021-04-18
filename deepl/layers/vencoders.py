@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-from .activations import ACT2FN
+from .activations import get_activation
 from .encoders import BertSelfAttention
 from ..models.config import PSS
 from .utils import kld_gaussian
@@ -80,7 +80,7 @@ class BertFeedForward(nn.Module):
     def __init__(self,
                  hidden_size,
                  intermediate_size,
-                 hidden_act='gelu',
+                 hidden_act,
                  layer_norm_eps=1e-12,
                  sigma_eps=1e-12):
         super().__init__()
@@ -91,10 +91,7 @@ class BertFeedForward(nn.Module):
         self.dense_output = nn.Linear(intermediate_size, hidden_size)
         self.log_sigma_output = nn.Parameter(torch.Tensor(hidden_size, intermediate_size))
         self.log_sigma_output.data.fill_(-1.0 - 0.5*math.log(intermediate_size))
-        if isinstance(hidden_act, str):
-            self.intermediate_act_fn = ACT2FN[hidden_act]
-        else:
-            self.intermediate_act_fn = hidden_act
+        self.intermediate_act_fn = get_activation(hidden_act)
         self.sigma_eps = sigma_eps
         self.use_var = True
 

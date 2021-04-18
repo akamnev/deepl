@@ -2,7 +2,7 @@ import math
 import torch
 import torch.nn as nn
 
-from .activations import gelu, ACT2FN
+from .activations import gelu, get_activation
 from .utils import get_min_value
 from ..models.config import PSS
 
@@ -220,13 +220,10 @@ class BertAttention(nn.Module):
 
 class BertIntermediate(nn.Module):
     def __init__(self, hidden_size, intermediate_size,
-                 hidden_act='gelu'):
+                 hidden_act):
         super().__init__()
         self.dense = nn.Linear(hidden_size, intermediate_size)
-        if isinstance(hidden_act, str):
-            self.intermediate_act_fn = ACT2FN[hidden_act]
-        else:
-            self.intermediate_act_fn = hidden_act
+        self.intermediate_act_fn = get_activation(hidden_act)
 
     def forward(self, hidden_states):
         hidden_states = self.dense(hidden_states)

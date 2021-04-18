@@ -2,6 +2,7 @@ import logging
 import math
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 
@@ -51,12 +52,28 @@ ACT2FN = {
     "sigmoid": torch.sigmoid,
     "gelu_new": gelu_new,
     "gelu_fast": gelu_fast,
-    "mish": mish
+    "mish": mish,
+    "leakyReLU": torch.nn.LeakyReLU(),
+    "ReLU": F.relu
 }
 
 
-def get_activation(activation_string):
-    if activation_string in ACT2FN:
-        return ACT2FN[activation_string]
+def get_activation(activation):
+    if isinstance(activation, str):
+        return ACT2FN[activation]
+    elif isinstance(activation, (list, tuple)):
+        activation_name = activation[0]
+        activation_params = activation[1]
+        if activation_name == 'LeakyReLU':
+            return nn.LeakyReLU(**activation_params)
+        else:
+            raise ValueError(activation_name)
+    elif isinstance(activation, dict):
+        if activation['name'] == 'LeakyReLU':
+            return nn.LeakyReLU(**activation['params'])
+        else:
+            raise ValueError(activation)
+    elif callable(activation):
+        return activation
     else:
-        raise KeyError("function {} not found in ACT2FN mapping {}".format(activation_string, list(ACT2FN.keys())))
+        raise ValueError(activation)
