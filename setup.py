@@ -4,6 +4,7 @@ import setuptools
 INSTALL_REQUIRES = [
     'torch>=1.5.0',
     'numpy',
+    'scipy'
 
 ]
 EXTRAS_REQUIRE = {

@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+from scipy import special
+import math
 from .utils import kld_gaussian
 
 
@@ -19,9 +21,53 @@ class GaussianDropout(nn.Module):
         return vector
 
 
-class VariationalGaussianDropout(nn.Module):
-    def __init__(self, input_size, truncate=None):
+class VariationalBase(nn.Module):
+    def __init__(self, input_size, momentum=0.99, eps=1e-8):
         super().__init__()
+        self.input_size = input_size
+        self.momentum = momentum
+        self.eps = eps
+        self.register_buffer('running_mean', torch.zeros(input_size))
+        self.register_buffer('running_var', torch.zeros(input_size))
+        self.register_buffer('num_batches_tracked',
+                             torch.tensor(0, dtype=torch.long))
+
+    def reset_running_stats(self):
+        self.running_mean.zero_()
+        self.running_var.zero_()
+        self.num_batches_tracked.zero_()
+
+    def update(self, input_vector):
+        input_vector = input_vector.view(-1, self.input_size)
+        mean = input_vector.data.mean(dim=0)
+        self.running_mean.data.mul_(self.momentum).add_(mean, alpha=1-self.momentum)
+        std = input_vector.data.std(dim=0)
+        self.running_var.data.mul_(self.momentum).addcmul_(std, std, value=1-self.momentum)
+        self.num_batches_tracked.data.add_(1)
+
+    @property
+    def _correction(self):
+        return 1.0 - self.momentum ** self.num_batches_tracked
+
+    @property
+    def mean(self):
+        return self.running_mean / self._correction
+
+    @property
+    def var(self):
+        return self.running_var / self._correction
+
+    @property
+    def snr(self):
+        return self.mean / (torch.sqrt(self.var) + self.eps)
+
+
+class VariationalGaussianDropout(VariationalBase):
+    """Вариационный слой регуляризации с априорным и апостериорным
+    нормальными распределениями
+    """
+    def __init__(self, input_size, truncate=None, momentum=0.99, eps=1e-8):
+        super().__init__(input_size, momentum=momentum, eps=eps)
         self.truncate = truncate
         self.log_sigma = nn.Parameter(torch.Tensor(input_size))
         self.log_sigma.data.fill_(-1.0)
@@ -37,7 +83,54 @@ class VariationalGaussianDropout(nn.Module):
             self._mean = vector
 
             vector = vector + variance * epsilon
+            self.update(vector)
         return vector
 
     def kld(self, nu=0.0, rho=1.0):
         return kld_gaussian(self._mean, self.log_sigma, nu=nu, rho=rho)
+
+
+class VariationalLogNormanGammaDropout(VariationalBase):
+    """Вариационный слой регуляризации с априорным гамма и апостериорным
+    логнормальным распределениями
+    """
+
+    def __init__(self, input_size, truncate=None, momentum=0.99, eps=1e-8):
+        super().__init__(input_size, momentum=momentum, eps=eps)
+        self.truncate = truncate
+        self.sigma = nn.Parameter(torch.Tensor(input_size))
+        self.sigma.data.fill_(0.01)
+        self.eps = eps
+        self._mean = None
+        self._coeff = None
+
+    def forward(self, vector):
+        if self.training:
+            epsilon = torch.randn(vector.size(), device=vector.device)
+            if self.truncate is not None:
+                epsilon = torch.fmod(epsilon, self.truncate)
+            xi = -0.5 * self.sigma * self.sigma + torch.abs(self.sigma) * epsilon
+
+            self._mean = vector
+
+            vector = vector * torch.exp(xi)
+            self.update(vector)
+        return vector
+
+    def kld(self, alpha=0.01, beta=0.1):
+        alpha, beta = float(alpha), float(beta)
+        if self._coeff is None:
+            self._coeff = {(alpha, beta): self._kld_coeff(alpha, beta)}
+        elif (alpha, beta) not in self._coeff:
+            self._coeff[(alpha, beta)] = self._kld_coeff(alpha, beta)
+        const_coeff = self._coeff[(alpha, beta)]
+        var_part = - torch.log(torch.abs(self.sigma) + self.eps) + 0.5 * alpha * self.sigma**2
+        mean_part = beta * torch.abs(self._mean) - alpha * torch.log(torch.abs(self._mean) + self.eps)
+        fval = const_coeff * torch.numel(var_part) + torch.sum(var_part) + torch.sum(mean_part)
+        return fval
+
+    @staticmethod
+    def _kld_coeff(alpha, beta):
+        return special.loggamma(alpha) - alpha * math.log(beta) \
+               - 0.5 * math.log(2 * math.pi) - 0.5
+
