@@ -2,7 +2,7 @@ import math
 import torch
 import torch.nn as nn
 
-from .activations import gelu, get_activation
+from .activations import get_activation
 from .utils import get_min_value
 from ..models.config import PSS
 
@@ -419,14 +419,15 @@ class BertEncoder(nn.Module):
 class LMHead(nn.Module):
     """Head for masked language modeling."""
 
-    def __init__(self, hidden_size, vocab_size):
+    def __init__(self, hidden_size, hidden_act, vocab_size):
         super().__init__()
         self.dense = nn.Linear(hidden_size, hidden_size)
+        self.act = get_activation(hidden_act)
         self.decoder = nn.Linear(hidden_size, vocab_size)
 
     def forward(self, features):
         x = self.dense(features)
-        x = gelu(x)
+        x = self.act(x)
         x = self.decoder(x)
         return x
 
