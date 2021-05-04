@@ -37,8 +37,11 @@ class VariationalBase(nn.Module):
         self.running_var.zero_()
         self.num_batches_tracked.zero_()
 
-    def update(self, input_vector):
+    def update(self, input_vector, mask=None):
         input_vector = input_vector.view(-1, self.input_size)
+        if mask is not None:
+            mask = mask.view(-1)
+            input_vector = input_vector[mask > 0]
         mean = input_vector.data.mean(dim=0)
         self.running_mean.data.mul_(self.momentum).add_(mean, alpha=1-self.momentum)
         std = input_vector.data.std(dim=0)
@@ -73,17 +76,19 @@ class VariationalGaussianDropout(VariationalBase):
         self.log_sigma.data.fill_(-1.0)
         self._mean = None
 
-    def forward(self, vector):
+    def forward(self, vector, mask=None):
         if self.training:
             epsilon = torch.randn(vector.size(), device=vector.device)
             if self.truncate is not None:
                 epsilon = torch.fmod(epsilon, self.truncate)
+            if mask is not None:
+                epsilon = epsilon * mask[..., None]
             variance = torch.exp(self.log_sigma)
 
             self._mean = vector
 
             vector = vector + variance * epsilon
-            self.update(vector)
+            self.update(vector, mask)
         return vector
 
     def kld(self, nu=0.0, rho=1.0):
@@ -104,7 +109,7 @@ class VariationalLogNormanGammaDropout(VariationalBase):
         self._mean = None
         self._coeff = None
 
-    def forward(self, vector):
+    def forward(self, vector, mask=None):
         if self.training:
             epsilon = torch.randn(vector.size(), device=vector.device)
             if self.truncate is not None:
@@ -113,8 +118,11 @@ class VariationalLogNormanGammaDropout(VariationalBase):
 
             self._mean = vector
 
+            if mask is not None:
+                xi = xi * mask[..., None]
+
             vector = vector * torch.exp(xi)
-            self.update(vector)
+            self.update(vector, mask)
         return vector
 
     def kld(self, alpha=0.01, beta=0.1):
