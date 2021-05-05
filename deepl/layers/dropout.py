@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from scipy import special
 import math
-from .utils import kld_gaussian
+from .utils import kld_gaussian, rand_epanechnikov_trig
 
 
 class GaussianDropout(nn.Module):
@@ -95,7 +95,35 @@ class VariationalGaussianDropout(VariationalBase):
         return kld_gaussian(self._mean, self.log_sigma, nu=nu, rho=rho)
 
 
-class VariationalLogNormanGammaDropout(VariationalBase):
+class VariationalNormalEpanechnikovDropout(VariationalBase):
+    def __init__(self, input_size, momentum=0.99, eps=1e-8):
+        super().__init__(input_size, momentum=momentum, eps=eps)
+        self.log_sigma = nn.Parameter(torch.Tensor(input_size))
+        self.log_sigma.data.fill_(-1.0)
+        self._mean = None
+        self._const = 0.5*math.log(90.0*math.pi) - 7./6.
+        self._shift = 0.5*math.log(5.0)
+
+    def forward(self, vector, mask=None):
+        if self.training:
+            epsilon = rand_epanechnikov_trig(vector.size(), device=vector.device)
+            if mask is not None:
+                epsilon = epsilon * mask[..., None]
+            variance = torch.exp(self.log_sigma)
+
+            self._mean = vector
+
+            vector = vector + variance * epsilon
+            self.update(vector, mask)
+        return vector
+
+    def kld(self, nu=0.0, rho=1.0):
+        log_sigma = self.log_sigma - self._shift
+        normal_kld = kld_gaussian(self._mean, log_sigma, nu=nu, rho=rho)
+        return self._const + normal_kld
+
+
+class VariationalLogNormalGammaDropout(VariationalBase):
     """Вариационный слой регуляризации с априорным гамма и апостериорным
     логнормальным распределениями
     """
