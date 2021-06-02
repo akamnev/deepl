@@ -43,6 +43,9 @@ def set_config_attrib(obj, name, value):
 class ConfigBase:
     def to_dict(self):
         output = copy.deepcopy(self.__dict__)
+        if 'device' in output:
+            output['device'] = str(output['device'])
+        output['class_name'] = self.__class__.__name__
         return output
 
     def to_json(self):
@@ -54,9 +57,15 @@ class ConfigBase:
             fp.write(self.to_json())
 
     @classmethod
+    def from_dict(cls, inputs):
+        if 'class_name' in inputs:
+            inputs.pop('class_name')
+        return cls(**inputs)
+
+    @classmethod
     def from_file(cls, file_path, **kwargs):
         with open(file_path, 'r') as fp:
-            config = cls(**json.load(fp))
+            config = cls.from_dict(json.load(fp))
 
         for key, value in kwargs.items():
             set_config_attrib(config, key, value)
@@ -66,7 +75,7 @@ class ConfigBase:
         return self.to_json()
 
 
-class BERTConfig(ConfigBase):
+class EncoderConfig(ConfigBase):
     def __init__(self,
                  num_hidden_layers,
                  num_attention_heads,
@@ -78,13 +87,11 @@ class BERTConfig(ConfigBase):
                  half_width_val=0,
                  is_decoder=False,
                  device='cpu',
-                 dropout_head=0.0,
-                 dropout_prob=0.1,
-                 layer_norm_eps=1e-12,
+                 dropout_alpha=0.0,
+                 attention_head_size=None,
+                 layer_norm_eps=1e-8,
                  padding_idx=0,
-                 hidden_act='gelu',
-                 initializer_range=0.02,
-                 cross_layer_parameter_sharing=PSS.NO_PARAMETERS_SHARING,
+                 hidden_act='ReLU',
                  output_attentions=False,
                  output_hidden_states=False):
         self.num_hidden_layers = num_hidden_layers
@@ -97,126 +104,48 @@ class BERTConfig(ConfigBase):
         self.half_width_val = half_width_val
         self.is_decoder = is_decoder
         self.device = device
-        self.dropout_head = dropout_head
-        self.dropout_prob = dropout_prob
+        self.dropout_alpha = dropout_alpha
+        self.attention_head_size = attention_head_size
         self.layer_norm_eps = layer_norm_eps
         self.padding_idx = padding_idx
         self.hidden_act = hidden_act
-        self.initializer_range = initializer_range
-        self.cross_layer_parameter_sharing = cross_layer_parameter_sharing
         self.output_attentions = output_attentions
         self.output_hidden_states = output_hidden_states
 
         if isinstance(self.device, str):
             self.device = torch.device(self.device)
 
-        if not isinstance(self.cross_layer_parameter_sharing, PSS):
-            self.cross_layer_parameter_sharing = PSS.from_name(
-                self.cross_layer_parameter_sharing)
 
-    def to_dict(self):
-        output = super().to_dict()
-        output['device'] = str(output['device'])
-        output['cross_layer_parameter_sharing'] = self.cross_layer_parameter_sharing.name
-        return output
-
-
-class BERTLanguageModelConfig(BERTConfig):
+class EmbeddingsConfigBase(ConfigBase):
     def __init__(self,
-                 num_hidden_layers,
-                 num_attention_heads,
-                 hidden_size,
-                 intermediate_size,
                  vocab_size,
-                 max_position_embedding=0,
-                 half_width_key=0,
-                 half_width_val=0,
-                 device='cpu',
-                 is_decoder=False,
-                 dropout_head=0.0,
-                 dropout_prob=0.1,
-                 layer_norm_eps=1e-12,
+                 hidden_size,
                  padding_idx=0,
-                 hidden_act='gelu',
-                 initializer_range=0.02,
-                 cross_layer_parameter_sharing=PSS.NO_PARAMETERS_SHARING,
-                 use_cut_head=True,
-                 ignore_index=-100,
-                 tie_embedding_vectors=True,
-                 output_attentions=False,
-                 output_hidden_states=False):
-        super().__init__(num_hidden_layers,
-                         num_attention_heads,
-                         hidden_size,
-                         intermediate_size,
-                         vocab_size,
-                         max_position_embedding,
-                         half_width_key,
-                         half_width_val,
-                         is_decoder,
-                         device,
-                         dropout_head,
-                         dropout_prob,
-                         layer_norm_eps,
-                         padding_idx,
-                         hidden_act,
-                         initializer_range,
-                         cross_layer_parameter_sharing,
-                         output_attentions,
-                         output_hidden_states)
-        self.use_cut_head = use_cut_head
-        self.ignore_index = ignore_index
-        self.tie_embedding_vectors = tie_embedding_vectors
+                 device='cpu'):
+        self.vocab_size = vocab_size
+        self.hidden_size = hidden_size
+        self.padding_idx = padding_idx
+        self.device = device
 
 
-class VectorTextBERTConfig(BERTLanguageModelConfig):
+class WordEmbeddingsConfig(EmbeddingsConfigBase):
+    pass
+
+
+class VectorEmbeddingsConfig(EmbeddingsConfigBase):
     def __init__(self,
-                 num_hidden_layers,
-                 num_attention_heads,
-                 hidden_size,
-                 intermediate_size,
                  vocab_size,
-                 max_position_embedding=0,
-                 half_width_key=0,
-                 half_width_val=0,
-                 model_type=VPP.INSIDE,
-                 device='cpu',
-                 is_decoder=False,
-                 dropout_head=0.0,
-                 dropout_prob=0.1,
-                 layer_norm_eps=1e-12,
+                 hidden_size,
+                 model_type,
                  padding_idx=0,
-                 hidden_act='gelu',
-                 initializer_range=0.02,
-                 cross_layer_parameter_sharing=PSS.NO_PARAMETERS_SHARING,
-                 use_cut_head=True,
-                 ignore_index=-100,
-                 tie_embedding_vectors=True,
-                 output_attentions=False,
-                 output_hidden_states=False):
-        super().__init__(num_hidden_layers,
-                         num_attention_heads,
-                         hidden_size,
-                         intermediate_size,
-                         vocab_size,
-                         max_position_embedding,
-                         half_width_key,
-                         half_width_val,
-                         device,
-                         is_decoder,
-                         dropout_head,
-                         dropout_prob,
-                         layer_norm_eps,
-                         padding_idx,
-                         hidden_act,
-                         initializer_range,
-                         cross_layer_parameter_sharing,
-                         use_cut_head,
-                         ignore_index,
-                         tie_embedding_vectors,
-                         output_attentions,
-                         output_hidden_states)
+                 device='cpu'):
+        super().__init__(
+            vocab_size=vocab_size,
+            hidden_size=hidden_size,
+            padding_idx=padding_idx,
+            device=device)
         self.model_type = model_type
+
         if not isinstance(self.model_type, VPP):
             self.model_type = VPP.from_name(self.model_type)
 
@@ -226,52 +155,75 @@ class VectorTextBERTConfig(BERTLanguageModelConfig):
         return output
 
 
-class TextVectorVAEConfig(BERTConfig):
+class HeadConfigBase(ConfigBase):
+    def __init__(self, output_name):
+        self.output_name = output_name
+
+
+class LanguageHeadConfig(HeadConfigBase):
     def __init__(self,
-                 num_hidden_layers,
-                 num_attention_heads,
+                 output_name,
                  hidden_size,
-                 intermediate_size,
-                 vocab_size,
-                 max_position_embedding=0,
-                 half_width_key=0,
-                 half_width_val=0,
-                 is_decoder=False,
-                 device='cpu',
-                 dropout_head=0.0,
-                 dropout_prob=0.1,
-                 layer_norm_eps=1e-12,
-                 padding_idx=0,
-                 hidden_act='gelu',
-                 initializer_range=0.02,
-                 cross_layer_parameter_sharing=PSS.NO_PARAMETERS_SHARING,
-                 vae_type=VAEType.NORMAL_TANH_ABS,
-                 output_attentions=False,
-                 output_hidden_states=False):
-        super().__init__(num_hidden_layers,
-                         num_attention_heads,
-                         hidden_size,
-                         intermediate_size,
-                         vocab_size,
-                         max_position_embedding,
-                         half_width_key,
-                         half_width_val,
-                         is_decoder,
-                         device,
-                         dropout_head,
-                         dropout_prob,
-                         layer_norm_eps,
-                         padding_idx,
-                         hidden_act,
-                         initializer_range,
-                         cross_layer_parameter_sharing,
-                         output_attentions,
-                         output_hidden_states)
-        self.vae_type = vae_type
-        if not isinstance(self.vae_type, VAEType):
-            self.vae_type = VAEType.from_name(self.vae_type)
+                 hidden_act,
+                 vocab_size):
+        super().__init__(
+            output_name=output_name
+        )
+        self.hidden_size = hidden_size
+        self.hidden_act = hidden_act
+        self.vocab_size = vocab_size
+
+
+class VectorMeanHeadConfig(HeadConfigBase):
+    pass
+
+
+class VectorMaxHeadConfig(HeadConfigBase):
+    pass
+
+
+class LanguageModelConfig(ConfigBase):
+    def __init__(self,
+                 embeddings,
+                 encoder,
+                 heads=None):
+
+        if isinstance(embeddings, dict):
+            if embeddings['class_name'] == WordEmbeddingsConfig.__name__:
+                self.embeddings = WordEmbeddingsConfig.from_dict(embeddings)
+            elif embeddings['class_name'] == VectorEmbeddingsConfig.__name__:
+                self.embeddings = VectorEmbeddingsConfig.from_dict(embeddings)
+        self.embeddings = embeddings
+        if not isinstance(self.embeddings, (WordEmbeddingsConfig,
+                                            VectorEmbeddingsConfig)):
+            raise ValueError(self.embeddings)
+
+        if isinstance(encoder, dict):
+            self.encoder = EncoderConfig(**encoder)
+        if isinstance(encoder, EncoderConfig):
+            self.encoder = encoder
+        else:
+            raise ValueError(encoder)
+
+        self.heads = []
+        for head in heads:
+            if isinstance(heads, dict):
+                for cls in (LanguageHeadConfig,
+                            VectorMeanHeadConfig,
+                            VectorMaxHeadConfig):
+                    if head['class_name'] == cls.__name__:
+                        head = cls.from_dict(head)
+                        break
+            if not isinstance(head, (LanguageHeadConfig,
+                                     VectorMeanHeadConfig,
+                                     VectorMaxHeadConfig)):
+                raise ValueError(head)
+            self.heads.append(head)
 
     def to_dict(self):
-        output = super().to_dict()
-        output['vae_type'] = self.vae_type.name
-        return output
+        outputs = {
+            'embeddings': self.embeddings.to_dict(),
+            'encoder': self.encoder.to_dict(),
+            'heads': [h.to_dict() for h in self.heads]
+        }
+        return outputs

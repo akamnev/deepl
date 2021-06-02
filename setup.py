@@ -16,7 +16,7 @@ with open('README.md', 'r') as fh:
 
 setuptools.setup(
     name='deepl',
-    version='0.0',
+    version='1.0',
     long_description=long_description,
     long_description_content_type='text/markdown',
     packages=setuptools.find_packages(),

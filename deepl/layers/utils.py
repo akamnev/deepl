@@ -20,6 +20,14 @@ def get_attention_mask(input_ids):
     return attention_mask
 
 
+def get_vector_attention_mask(input_ids):
+    max_length = max([len(x) for x in input_ids])
+    attention_mask = [[1.0] * (len(x) + 1) +
+                      [0.0] * (max_length - len(x))
+                      for x in input_ids]
+    return attention_mask
+
+
 def prune_input_sequence(input_ids, max_length):
     fval = []
     for ids in input_ids:

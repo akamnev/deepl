@@ -43,9 +43,9 @@ class BertAttention(nn.Module):
                  num_attention_heads,
                  half_width_key=0,
                  half_width_val=0,
-                 dropout_head=0.0,
-                 dropout_prob=0.1,
-                 layer_norm_eps=1e-12,
+                 dropout_alpha=0.0,
+                 attention_head_size=None,
+                 layer_norm_eps=1e-8,
                  output_attentions=False):
         super().__init__()
         self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
@@ -53,8 +53,8 @@ class BertAttention(nn.Module):
                                       num_attention_heads=num_attention_heads,
                                       half_width_key=half_width_key,
                                       half_width_val=half_width_val,
-                                      dropout_head=dropout_head,
-                                      dropout_prob=dropout_prob,
+                                      dropout_alpha=dropout_alpha,
+                                      attention_head_size=attention_head_size,
                                       output_attentions=output_attentions)
         self.output = BertSelfOutput(hidden_size=hidden_size)
 
@@ -81,7 +81,7 @@ class BertFeedForward(nn.Module):
                  hidden_size,
                  intermediate_size,
                  hidden_act,
-                 layer_norm_eps=1e-12,
+                 layer_norm_eps=1e-8,
                  sigma_eps=1e-12):
         super().__init__()
         self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
@@ -136,18 +136,18 @@ class BertLayer(nn.Module):
                  half_width_key=0,
                  half_width_val=0,
                  is_decoder=False,
-                 dropout_head=0.0,
-                 dropout_prob=0.1,
-                 hidden_act='gelu',
-                 layer_norm_eps=1e-12,
+                 dropout_alpha=0.0,
+                 attention_head_size=None,
+                 hidden_act='ReLU',
+                 layer_norm_eps=1e-8,
                  output_attentions=False):
         super().__init__()
         self.attention = BertAttention(hidden_size=hidden_size,
                                        num_attention_heads=num_attention_heads,
                                        half_width_key=half_width_key,
                                        half_width_val=half_width_val,
-                                       dropout_head=dropout_head,
-                                       dropout_prob=dropout_prob,
+                                       dropout_alpha=dropout_alpha,
+                                       attention_head_size=attention_head_size,
                                        layer_norm_eps=layer_norm_eps,
                                        output_attentions=output_attentions)
         self.is_decoder = is_decoder
@@ -156,8 +156,8 @@ class BertLayer(nn.Module):
                                                  num_attention_heads=num_attention_heads,
                                                  half_width_key=half_width_key,
                                                  half_width_val=half_width_val,
-                                                 dropout_head=dropout_head,
-                                                 dropout_prob=dropout_prob,
+                                                 dropout_alpha=dropout_alpha,
+                                                 attention_head_size=attention_head_size,
                                                  layer_norm_eps=layer_norm_eps,
                                                  output_attentions=output_attentions)
         self.feedforward = BertFeedForward(hidden_size=hidden_size,
@@ -199,10 +199,10 @@ class BertEncoder(nn.Module):
                  half_width_key=0,
                  half_width_val=0,
                  is_decoder=False,
-                 dropout_head=0.0,
-                 dropout_prob=0.1,
-                 hidden_act='gelu',
-                 layer_norm_eps=1e-12,
+                 dropout_alpha=0.0,
+                 attention_head_size=None,
+                 hidden_act='ReLU',
+                 layer_norm_eps=1e-8,
                  cross_layer_parameter_sharing=PSS.NO_PARAMETERS_SHARING,
                  output_attentions=False,
                  output_hidden_states=False):
@@ -216,8 +216,8 @@ class BertEncoder(nn.Module):
                                                   half_width_key=half_width_key,
                                                   half_width_val=half_width_val,
                                                   is_decoder=is_decoder,
-                                                  dropout_head=dropout_head,
-                                                  dropout_prob=dropout_prob,
+                                                  dropout_alpha=dropout_alpha,
+                                                  attention_head_size=attention_head_size,
                                                   hidden_act=hidden_act,
                                                   layer_norm_eps=layer_norm_eps,
                                                   output_attentions=output_attentions)
@@ -229,8 +229,8 @@ class BertEncoder(nn.Module):
                                           half_width_key=half_width_key,
                                           half_width_val=half_width_val,
                                           is_decoder=is_decoder,
-                                          dropout_head=dropout_head,
-                                          dropout_prob=dropout_prob,
+                                          dropout_alpha=dropout_alpha,
+                                          attention_head_size=attention_head_size,
                                           hidden_act=hidden_act,
                                           layer_norm_eps=layer_norm_eps,
                                           output_attentions=output_attentions)
