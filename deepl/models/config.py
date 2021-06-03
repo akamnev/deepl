@@ -38,6 +38,12 @@ def set_config_attrib(obj, name, value):
         child = getattr(obj, child)
         if isinstance(child, ConfigBase):
             set_config_attrib(child, name, value)
+        elif isinstance(child, (list, tuple, set)):
+            for ch in child:
+                set_config_attrib(ch, name, value)
+        elif isinstance(child, dict):
+            for ch in child.values():
+                set_config_attrib(ch, name, value)
 
 
 class ConfigBase:
