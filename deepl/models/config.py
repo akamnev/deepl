@@ -81,8 +81,6 @@ class EncoderConfig(ConfigBase):
                  num_attention_heads,
                  hidden_size,
                  intermediate_size,
-                 vocab_size,
-                 max_position_embedding=0,
                  half_width_key=0,
                  half_width_val=0,
                  is_decoder=False,
@@ -98,8 +96,6 @@ class EncoderConfig(ConfigBase):
         self.num_attention_heads = num_attention_heads
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
-        self.vocab_size = vocab_size
-        self.max_position_embedding = max_position_embedding
         self.half_width_key = half_width_key
         self.half_width_val = half_width_val
         self.is_decoder = is_decoder
@@ -190,16 +186,16 @@ class LanguageModelConfig(ConfigBase):
 
         if isinstance(embeddings, dict):
             if embeddings['class_name'] == WordEmbeddingsConfig.__name__:
-                self.embeddings = WordEmbeddingsConfig.from_dict(embeddings)
+                embeddings = WordEmbeddingsConfig.from_dict(embeddings)
             elif embeddings['class_name'] == VectorEmbeddingsConfig.__name__:
-                self.embeddings = VectorEmbeddingsConfig.from_dict(embeddings)
+                embeddings = VectorEmbeddingsConfig.from_dict(embeddings)
         self.embeddings = embeddings
         if not isinstance(self.embeddings, (WordEmbeddingsConfig,
                                             VectorEmbeddingsConfig)):
             raise ValueError(self.embeddings)
 
         if isinstance(encoder, dict):
-            self.encoder = EncoderConfig(**encoder)
+            encoder = EncoderConfig.from_dict(encoder)
         if isinstance(encoder, EncoderConfig):
             self.encoder = encoder
         else:
@@ -207,7 +203,7 @@ class LanguageModelConfig(ConfigBase):
 
         self.heads = []
         for head in heads:
-            if isinstance(heads, dict):
+            if isinstance(head, dict):
                 for cls in (LanguageHeadConfig,
                             VectorMeanHeadConfig,
                             VectorMaxHeadConfig):

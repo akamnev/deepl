@@ -15,7 +15,6 @@ class BertSelfAttentionNaiveImpl(nn.Module):
                  half_width_key,
                  half_width_val,
                  dropout_prob=0.0,
-                 dropout_head=0.0,
                  output_attentions=False):
         super().__init__()
         if hidden_size % num_attention_heads != 0:
@@ -71,7 +70,6 @@ class BertSelfAttentionNaiveImpl(nn.Module):
         if self.half_width_key > 0:
             attention_scores_pos = self.get_key_position_score(query_layer)
             attention_scores = attention_scores + attention_scores_pos
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         if attention_mask is not None:
             extended_attention_mask = 1.0 - attention_mask[:, None, None, :]
             extended_attention_mask *= get_min_value(extended_attention_mask)
@@ -134,8 +132,6 @@ def naive_test_obj():
         'num_attention_heads': head_number,
         'half_width_key': half_width_key,
         'half_width_val': half_width_value,
-        'dropout_head': 0.0,
-        'dropout_prob': 0.0,
         'output_attentions': False
     }
     obj_test = BertSelfAttention(**params)
@@ -170,7 +166,7 @@ def test_position_key_score():
     q_naive, k_naive, v_naive = obj_naive.get_query_key_value(input_data)
     q_test, k_test, v_test, a_test = obj_test.get_query_key_value(input_data, None, None, None)
     att_pos_naive = obj_naive.get_key_position_score(q_naive)
-    att_pos_test = obj_test.get_key_position_score(q_test)
+    att_pos_test = obj_test.get_key_position_score(q_test, k_test)
     dv = att_pos_naive - att_pos_test
     assert torch.max(torch.abs(dv)) < MAX_FLOAT32_ERROR
 

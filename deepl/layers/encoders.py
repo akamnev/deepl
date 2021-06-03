@@ -356,7 +356,8 @@ class BertEncoder(nn.Module):
         encoder_attention_mask=None
     ):
         all_hidden_states = []
-        all_attentions = []
+        all_self_attentions = []
+        all_cross_attentions = []
 
         for layer_module in self.layer:
 
@@ -370,22 +371,32 @@ class BertEncoder(nn.Module):
             hidden_states = layer_outputs[0]
 
             if self.output_attentions:
-                all_attentions.extend(layer_outputs[1:])
+                if len(layer_outputs) > 1:
+                    all_self_attentions.extend(layer_outputs[1])
+                if len(layer_outputs) > 2:
+                    all_cross_attentions.extend(layer_outputs[2])
 
         # Add last layer
         if self.output_hidden_states:
             all_hidden_states.append(hidden_states)
 
-        outputs = [hidden_states, None, None]
-        if self.output_attentions:
-            all_attentions = [tensor.unsqueeze(dim=0)
-                              for tensor in all_attentions]
-            all_attentions = torch.cat(all_attentions, dim=0)
-            outputs[1] = all_attentions
+        outputs = [hidden_states, None, None, None]
+        if all_self_attentions:
+            all_self_attentions = [tensor.unsqueeze(dim=0)
+                                   for tensor in all_self_attentions]
+            all_self_attentions = torch.cat(all_self_attentions, dim=0)
+            outputs[1] = all_self_attentions
 
         if self.output_hidden_states:
             all_hidden_states = [tensor.unsqueeze(dim=0)
                                  for tensor in all_hidden_states]
             all_hidden_states = torch.cat(all_hidden_states, dim=0)
             outputs[2] = all_hidden_states
+
+        if all_cross_attentions:
+            all_cross_attentions = [tensor.unsqueeze(dim=0)
+                                    for tensor in all_cross_attentions]
+            all_cross_attentions = torch.cat(all_cross_attentions, dim=0)
+            outputs[3] = all_cross_attentions
+
         return outputs

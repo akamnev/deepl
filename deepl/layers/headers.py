@@ -16,7 +16,7 @@ def get_head_by_config(config):
     elif isinstance(config, VectorMeanHeadConfig):
         return VectorMeanHead(output_name=config.output_name)
     elif isinstance(config, VectorMaxHeadConfig):
-        return VectorMeanHead(output_name=config.output_name)
+        return VectorMaxHead(output_name=config.output_name)
     else:
         raise ValueError(config)
 
@@ -43,7 +43,7 @@ class LanguageModelHead(HeadBase):
             attention_mask = None
             embedding = embedding[labels_mask]
         hidden = self.dense(embedding)
-        hidden = self.decoder_dropout(hidden, attention_mask)
+        hidden = self.dense_dropout(hidden, attention_mask)
         hidden = self.act(hidden)
         scores = self.decoder(hidden)
         scores = self.decoder_dropout(scores, attention_mask)
@@ -53,7 +53,7 @@ class LanguageModelHead(HeadBase):
 class VectorMeanHead(HeadBase):
     def __init__(self, output_name):
         super().__init__(output_name)
-        self.eps = 1e-8,
+        self.eps = 1e-8
 
     def forward(self,
                 embedding,

@@ -34,7 +34,7 @@ class LanguageModelBase(ModelBase):
             [get_head_by_config(cfg) for cfg in config.heads])
 
 
-class LanguageModel(ModelBase):
+class LanguageModel(LanguageModelBase):
 
     def __init__(self, config: LanguageModelConfig):
         super().__init__(config)
@@ -61,13 +61,14 @@ class LanguageModel(ModelBase):
                                encoder_hidden_states,
                                encoder_attention_mask)
         outputs = {
-            'embedding': outputs[0],
-            'attention': outputs[1],
-            'hidden_states': outputs[2]
+            'embeddings': outputs[0],
+            'self_attentions': outputs[1],
+            'hidden_states': outputs[2],
+            'cross_attentions': outputs[3],
         }
         for head in self.heads:
             outputs[head.output_name] = head(
-                embedding=outputs['embedding'],
+                embedding=outputs['embeddings'],
                 attention_mask=attention_mask,
                 **kwargs
             )
@@ -124,13 +125,14 @@ class VectorLanguageModel(LanguageModelBase):
             encoder_attention_mask=encoder_attention_mask)
 
         outputs = {
-            'embedding': outputs[0],
-            'attention': outputs[1],
-            'hidden_states': outputs[2]
+            'embeddings': outputs[0],
+            'self_attentions': outputs[1],
+            'hidden_states': outputs[2],
+            'cross_attentions': outputs[3]
         }
         for head in self.heads:
             outputs[head.output_name] = head(
-                embedding=outputs['embedding'],
+                embedding=outputs['embeddings'],
                 attention_mask=attention_mask,
                 **kwargs
             )
