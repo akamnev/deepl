@@ -66,7 +66,10 @@ class LanguageModel(LanguageModelBase):
             'hidden_states': outputs[2],
             'cross_attentions': outputs[3],
         }
+        exclude_heads = kwargs.get('exclude_heads', set())
         for head in self.heads:
+            if exclude_heads and head.output_name in exclude_heads:
+                continue
             outputs[head.output_name] = head(
                 embedding=outputs['embeddings'],
                 attention_mask=attention_mask,

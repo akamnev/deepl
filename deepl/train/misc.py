@@ -2,12 +2,16 @@ import torch
 from functools import partial
 
 
-def init_weights(module, initializer_range):
+def _init_weights(module, initializer_range):
     if isinstance(module, (torch.nn.Linear, torch.nn.Embedding)):
         module.weight.data.normal_(
             mean=0.0, std=initializer_range)
     if isinstance(module, torch.nn.Linear) and module.bias is not None:
         module.bias.data.zero_()
+
+
+def init_weights(initializer_range):
+    return partial(_init_weights, initializer_range=initializer_range)
 
 
 def tie_weights(self):
