@@ -14,8 +14,9 @@ class WordEmbeddingsBase(nn.Module):
     def __init__(self,
                  vocab_size,
                  hidden_size,
-                 device='cpu',
-                 padding_idx=0):
+                 max_position=0,
+                 padding_idx=0,
+                 device='cpu'):
         super().__init__()
         self.padding_idx = padding_idx
         self.device = device if isinstance(device, torch.device) \
@@ -23,17 +24,38 @@ class WordEmbeddingsBase(nn.Module):
         self.word_embeddings = nn.Embedding(vocab_size,
                                             hidden_size,
                                             padding_idx=padding_idx)
+        self.max_position = max_position
+        self.word_embeddings = nn.Embedding(vocab_size,
+                                            hidden_size,
+                                            padding_idx=padding_idx)
+        if max_position > 0:
+            self.position_embeddings = nn.Embedding(max_position + 1,
+                                                    hidden_size,
+                                                    padding_idx=padding_idx)
+
         self.dropout = VariationalNormalEpanechnikovDropout(hidden_size)
 
 
 class WordEmbeddings(WordEmbeddingsBase):
     def forward(self, input_ids):
         max_length = max([len(x) for x in input_ids])
+        position_embeddings = None
+        if self.max_position > 0:
+            position_ids = [[xi for xi in range(self.padding_idx + 1, len(x) + self.padding_idx + 1)]
+                            + [self.padding_idx] * (max_length - len(x))
+                            for x in input_ids]
+            position_ids = torch.tensor(position_ids, dtype=torch.long,
+                                        device=self.device)
+            position_embeddings = self.position_embeddings(position_ids)
+
         input_ids = [x + [self.padding_idx] * (max_length - len(x))
                      for x in input_ids]
         input_ids = torch.tensor(input_ids, dtype=torch.long,
                                  device=self.device)
         embeddings = self.word_embeddings(input_ids)
+        if position_embeddings is not None:
+            embeddings = embeddings + position_embeddings
+
         embeddings = self.dropout(embeddings)
         return embeddings
 
@@ -45,6 +67,8 @@ class VectorEmbeddingsBase(WordEmbeddingsBase):
 
 class VectorFirstEmbeddings(VectorEmbeddingsBase):
     def forward(self, input_ids, vectors, input_pos):
+        # TODO: add position embeddings
+        raise NotImplementedError
         max_length = max([len(x) for x in input_ids])
         input_ids = [x + [self.padding_idx] * (max_length - len(x))
                      for x in input_ids]
@@ -62,6 +86,9 @@ class VectorFirstEmbeddings(VectorEmbeddingsBase):
 
 class VectorLastEmbeddings(VectorEmbeddingsBase):
     def forward(self, input_ids, vectors, input_pos):
+        # TODO: add position embeddings
+        raise NotImplementedError
+
         max_length = max([len(x) for x in input_ids]) + 1
         inputs_embeds = []
         for n, seq in enumerate(input_ids):
@@ -84,6 +111,9 @@ class VectorLastEmbeddings(VectorEmbeddingsBase):
 
 class VectorInsideEmbeddings(VectorEmbeddingsBase):
     def forward(self, input_ids, vectors, input_pos):
+        # TODO: add position embeddings
+        raise NotImplementedError
+
         max_length = max([len(x) for x in input_ids])
         inputs_embeds = []
         for n, (seq, pos) in enumerate(zip(input_ids, input_pos)):

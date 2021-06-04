@@ -19,29 +19,25 @@ def create_model_config(is_decoder=False):
     cfg_embedding = WordEmbeddingsConfig(
         vocab_size=100,
         hidden_size=10,
+        max_position=12
     )
 
     cfg_lm = LanguageHeadConfig(
-        output_name='tokens',
         hidden_size=10,
         hidden_act='ReLU',
         vocab_size=100
     )
-    cfg_mean = VectorMeanHeadConfig(
-        output_name='mean_vector'
-    )
-    cfg_max = VectorMaxHeadConfig(
-        output_name='max_vector'
-    )
+    cfg_mean = VectorMeanHeadConfig()
+    cfg_max = VectorMaxHeadConfig()
 
     cfg_model = LanguageModelConfig(
         embeddings=cfg_embedding,
         encoder=cfg_encoder,
-        heads=[
-            cfg_lm,
-            cfg_mean,
-            cfg_max
-        ]
+        heads={
+            'tokens': cfg_lm,
+            'mean_vector': cfg_mean,
+            'max_vector': cfg_max
+        }
     )
     return cfg_model
 

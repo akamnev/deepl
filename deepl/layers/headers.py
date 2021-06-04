@@ -8,29 +8,26 @@ from ..models.config import LanguageHeadConfig, VectorMeanHeadConfig, \
 def get_head_by_config(config):
     if isinstance(config, LanguageHeadConfig):
         return LanguageModelHead(
-            output_name=config.output_name,
             hidden_size=config.hidden_size,
             hidden_act=config.hidden_act,
             vocab_size=config.vocab_size
         )
     elif isinstance(config, VectorMeanHeadConfig):
-        return VectorMeanHead(output_name=config.output_name)
+        return VectorMeanHead()
     elif isinstance(config, VectorMaxHeadConfig):
-        return VectorMaxHead(output_name=config.output_name)
+        return VectorMaxHead()
     else:
         raise ValueError(config)
 
 
 class HeadBase(nn.Module):
-    def __init__(self, output_name):
-        super().__init__()
-        self.output_name = output_name
+    pass
 
 
 class LanguageModelHead(HeadBase):
 
-    def __init__(self, output_name, hidden_size, hidden_act, vocab_size):
-        super().__init__(output_name)
+    def __init__(self, hidden_size, hidden_act, vocab_size):
+        super().__init__()
         self.dense = nn.Linear(hidden_size, hidden_size)
         self.dense_dropout = VariationalNormalEpanechnikovDropout(hidden_size)
         self.act = get_activation(hidden_act)
@@ -51,8 +48,8 @@ class LanguageModelHead(HeadBase):
 
 
 class VectorMeanHead(HeadBase):
-    def __init__(self, output_name):
-        super().__init__(output_name)
+    def __init__(self):
+        super().__init__()
         self.eps = 1e-8
 
     def forward(self,
@@ -65,8 +62,8 @@ class VectorMeanHead(HeadBase):
 
 
 class VectorMaxHead(HeadBase):
-    def __init__(self, output_name):
-        super().__init__(output_name)
+    def __init__(self):
+        super().__init__()
 
     def forward(self,
                 embedding,

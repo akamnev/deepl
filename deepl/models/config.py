@@ -122,10 +122,12 @@ class EmbeddingsConfigBase(ConfigBase):
     def __init__(self,
                  vocab_size,
                  hidden_size,
+                 max_position=0,
                  padding_idx=0,
                  device='cpu'):
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
+        self.max_position = max_position
         self.padding_idx = padding_idx
         self.device = device
 
@@ -158,19 +160,14 @@ class VectorEmbeddingsConfig(EmbeddingsConfigBase):
 
 
 class HeadConfigBase(ConfigBase):
-    def __init__(self, output_name):
-        self.output_name = output_name
+    pass
 
 
 class LanguageHeadConfig(HeadConfigBase):
     def __init__(self,
-                 output_name,
                  hidden_size,
                  hidden_act,
                  vocab_size):
-        super().__init__(
-            output_name=output_name
-        )
         self.hidden_size = hidden_size
         self.hidden_act = hidden_act
         self.vocab_size = vocab_size
@@ -207,8 +204,8 @@ class LanguageModelConfig(ConfigBase):
         else:
             raise ValueError(encoder)
 
-        self.heads = []
-        for head in heads:
+        self.heads = {}
+        for name, head in heads.items():
             if isinstance(head, dict):
                 for cls in (LanguageHeadConfig,
                             VectorMeanHeadConfig,
@@ -220,12 +217,12 @@ class LanguageModelConfig(ConfigBase):
                                      VectorMeanHeadConfig,
                                      VectorMaxHeadConfig)):
                 raise ValueError(head)
-            self.heads.append(head)
+            self.heads[name] = head
 
     def to_dict(self):
         outputs = {
             'embeddings': self.embeddings.to_dict(),
             'encoder': self.encoder.to_dict(),
-            'heads': [h.to_dict() for h in self.heads]
+            'heads': {k: h.to_dict() for k, h in self.heads.items()}
         }
         return outputs

@@ -30,8 +30,8 @@ class LanguageModelBase(ModelBase):
             layer_norm_eps=config.encoder.layer_norm_eps,
             output_attentions=config.encoder.output_attentions,
             output_hidden_states=config.encoder.output_hidden_states)
-        self.heads = torch.nn.ModuleList(
-            [get_head_by_config(cfg) for cfg in config.heads])
+        self.heads = torch.nn.ModuleDict(
+            {name: get_head_by_config(cfg) for name, cfg in config.heads.items()})
 
 
 class LanguageModel(LanguageModelBase):
@@ -41,6 +41,7 @@ class LanguageModel(LanguageModelBase):
         self.embedding = WordEmbeddings(
             vocab_size=config.embeddings.vocab_size,
             hidden_size=config.embeddings.hidden_size,
+            max_position=config.embeddings.max_position,
             device=config.embeddings.device,
             padding_idx=config.embeddings.padding_idx)
 
@@ -67,10 +68,10 @@ class LanguageModel(LanguageModelBase):
             'cross_attentions': outputs[3],
         }
         exclude_heads = kwargs.get('exclude_heads', set())
-        for head in self.heads:
-            if exclude_heads and head.output_name in exclude_heads:
+        for name, head in self.heads.items():
+            if exclude_heads and name in exclude_heads:
                 continue
-            outputs[head.output_name] = head(
+            outputs[name] = head(
                 embedding=outputs['embeddings'],
                 attention_mask=attention_mask,
                 **kwargs
@@ -95,6 +96,7 @@ class VectorLanguageModel(LanguageModelBase):
         self.embedding = embeddings(
             vocab_size=config.embeddings.vocab_size,
             hidden_size=config.embeddings.hidden_size,
+            max_position=config.embeddings.max_position,
             device=config.embeddings.device,
             padding_idx=config.embeddings.padding_idx)
 
@@ -133,8 +135,11 @@ class VectorLanguageModel(LanguageModelBase):
             'hidden_states': outputs[2],
             'cross_attentions': outputs[3]
         }
-        for head in self.heads:
-            outputs[head.output_name] = head(
+        exclude_heads = kwargs.get('exclude_heads', set())
+        for name, head in self.heads.items():
+            if exclude_heads and name in exclude_heads:
+                continue
+            outputs[name] = head(
                 embedding=outputs['embeddings'],
                 attention_mask=attention_mask,
                 **kwargs
