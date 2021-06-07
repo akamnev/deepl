@@ -161,7 +161,14 @@ class BertSelfAttention(nn.Module):
         return attention_scores_pos
 
     def loss_value_unity(self):
-        raise NotImplementedError
+        mask = self._attention_mask_tensor
+        value = self._value_tensor
+        value = value * mask[:, None, :, None]
+        loss = (1.0 - torch.norm(value, dim=-1)) ** 2
+        norm = value.shape[1] * torch.sum(mask)
+        loss = torch.sum(loss)
+        loss = loss / norm
+        return loss
 
     def loss_score_diag(self):
         raise NotImplementedError
