@@ -211,8 +211,7 @@ class BertAttention(nn.Module):
         self_attention_outputs = self.dropout_self(self_outputs[0], attention_mask)
         attention_outputs = self.dense_output(self_attention_outputs)
         attention_outputs = self.dropout_output(attention_outputs, attention_mask)
-        hidden_states = hidden_states + attention_outputs
-        outputs = [hidden_states] + self_outputs[1:]
+        outputs = [attention_outputs] + self_outputs[1:]
         return outputs
 
 
@@ -236,8 +235,7 @@ class BertFeedForward(nn.Module):
         intermediate_states = self.intermediate_act_fn(intermediate_states)
         output_states = self.dense_output(intermediate_states)
         output_states = self.dropout_output(output_states, attention_mask)
-        hidden_states = hidden_states + output_states
-        return hidden_states
+        return output_states
 
 
 class BertLayer(nn.Module):
@@ -299,25 +297,28 @@ class BertLayer(nn.Module):
             hidden_states=hidden_states,
             attention_mask=attention_mask)
         attention_output = self_attention_outputs[0]
+        hidden_states = hidden_states + attention_output
         outputs = self_attention_outputs[1:]
 
         if self.is_decoder:
-            attention_output = self.layer_norm_cross_attention(attention_output)
+            hidden_states = self.layer_norm_cross_attention(hidden_states)
             cross_attention_outputs = self.cross_attention(
-                hidden_states=attention_output,
+                hidden_states=hidden_states,
                 attention_mask=attention_mask,
                 encoder_hidden_states=encoder_hidden_states,
                 encoder_attention_mask=encoder_attention_mask)
             attention_output = cross_attention_outputs[0]
+            hidden_states = hidden_states + attention_output
             outputs = outputs + cross_attention_outputs[1:]
 
         if self.feedforward is not None:
-            attention_output = self.layer_norm_feedforward(attention_output)
-            attention_output = self.feedforward(
-                hidden_states=attention_output,
+            hidden_states = self.layer_norm_feedforward(hidden_states)
+            feedforward_output = self.feedforward(
+                hidden_states=hidden_states,
                 attention_mask=attention_mask)
+            hidden_states = hidden_states + feedforward_output
 
-        outputs = [attention_output] + outputs
+        outputs = [hidden_states] + outputs
         return outputs
 
 
