@@ -170,8 +170,18 @@ class BertSelfAttention(nn.Module):
         loss = loss / norm
         return loss
 
-    def loss_score_diag(self):
-        raise NotImplementedError
+    def loss_attention_entropy(self):
+        """ Идея аппроксимировать Maximal entropy random walk
+        для матриц внимания. Для регуляризации необходимо максимизировать
+        значение.
+        """
+        eps = 1e-8
+        p = self._score_tensor
+        mask = self._attention_mask_tensor
+        p = p * mask[:, None, :, None] * mask[:, None, None, :]
+        norm = torch.sum(mask) * self.num_attention_heads
+        loss = torch.sum(p * torch.log(p + eps)) / norm
+        return loss
 
 
 class BertAttention(nn.Module):

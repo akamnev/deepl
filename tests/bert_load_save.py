@@ -3,6 +3,7 @@ from deepl.models.bert import LanguageModel
 from deepl.models.config import EncoderConfig, WordEmbeddingsConfig, \
     LanguageHeadConfig, VectorMeanHeadConfig, VectorMaxHeadConfig, \
     LanguageModelConfig
+from deepl.train.utils import kld_loss
 
 
 def create_model_config(is_decoder=False):
@@ -85,3 +86,19 @@ def test_model_lm_run():
     )
 
 
+def test_loss_attention_entropy():
+    cfg = create_model_config(is_decoder=False)
+    model = LanguageModel(cfg)
+    input_ids = [list(range(5)), list(range(5))]
+    attention_mask = torch.tensor([[1.0, 1.0, 1.0, 1.0, 1.0],
+                                   [1.0, 1.0, 1.0, 1.0, 0.0]])
+    labels_mask = torch.tensor([[0.0, 1.0, 0.0, 0.0, 1.0],
+                                [0.0, 0.0, 0.0, 1.0, 0.0]])
+    labels_mask = labels_mask > 0.0
+
+    outputs = model(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        labels_mask=labels_mask
+    )
+    loss = kld_loss(model, 'loss_attention_entropy')
