@@ -2,7 +2,7 @@ import torch.nn as nn
 from .activations import get_activation
 from .dropout import VariationalNormalEpanechnikovDropout
 from ..models.config import LanguageHeadConfig, VectorMeanHeadConfig, \
-    VectorMaxHeadConfig
+    VectorMaxHeadConfig, LinRegHeadConfig
 
 
 def get_head_by_config(config):
@@ -16,6 +16,12 @@ def get_head_by_config(config):
         return VectorMeanHead()
     elif isinstance(config, VectorMaxHeadConfig):
         return VectorMaxHead()
+    elif isinstance(config, LinRegHeadConfig):
+        return LinRegHead(
+            hidden_size=config.hidden_size,
+            hidden_act=config.hidden_act,
+            output_size=config.output_size
+        )
     else:
         raise ValueError(config)
 
@@ -73,3 +79,17 @@ class VectorMaxHead(HeadBase):
         vectors = embedding + (1.0 - attention_mask[..., None]) * delta
         vectors, _ = vectors.max(dim=1)
         return vectors
+
+
+class LinRegHead(HeadBase):
+    def __init__(self, hidden_size, hidden_act, output_size):
+        super().__init__()
+        self.dense = nn.Linear(hidden_size, output_size)
+        self.dense_dropout = VariationalNormalEpanechnikovDropout(hidden_size)
+        self.act = get_activation(hidden_act)
+
+    def forward(self, embedding, attention_mask, **kwargs):
+        hidden = self.dense_dropout(embedding, attention_mask)
+        hidden = self.dense(hidden)
+        scores = self.act(hidden)
+        return scores

@@ -191,6 +191,16 @@ class VectorMaxHeadConfig(HeadConfigBase):
     pass
 
 
+class LinRegHeadConfig(HeadConfigBase):
+    def __init__(self,
+                 hidden_size,
+                 hidden_act,
+                 output_size):
+        self.hidden_size = hidden_size
+        self.hidden_act = hidden_act
+        self.output_size = output_size
+
+
 class LanguageModelConfig(ConfigBase):
     def __init__(self,
                  embeddings,
@@ -218,12 +228,14 @@ class LanguageModelConfig(ConfigBase):
         for name, head in heads.items():
             if isinstance(head, dict):
                 for cls in (LanguageHeadConfig,
+                            LinRegHeadConfig,
                             VectorMeanHeadConfig,
                             VectorMaxHeadConfig):
                     if head['class_name'] == cls.__name__:
                         head = cls.from_dict(head)
                         break
             if not isinstance(head, (LanguageHeadConfig,
+                                     LinRegHeadConfig,
                                      VectorMeanHeadConfig,
                                      VectorMaxHeadConfig)):
                 raise ValueError(head)
