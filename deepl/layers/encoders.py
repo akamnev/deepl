@@ -4,6 +4,7 @@ import torch.nn as nn
 from .dropout import VariationalNormalEpanechnikovDropout
 from .activations import get_activation
 from .utils import get_min_value
+from ..models.config import AttentionType
 
 
 class BertSelfAttention(nn.Module):
@@ -14,6 +15,7 @@ class BertSelfAttention(nn.Module):
                  half_width_val=0,
                  dropout_alpha=0.0,
                  attention_head_size=None,
+                 attention_type=AttentionType.BIDIRECTIONAL,
                  output_attentions=False):
         super().__init__()
         self.output_attentions = output_attentions
@@ -22,6 +24,7 @@ class BertSelfAttention(nn.Module):
             self.attention_head_size = int(hidden_size / num_attention_heads)
         else:
             self.attention_head_size = attention_head_size
+        self.attention_type = attention_type
 
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
@@ -108,6 +111,10 @@ class BertSelfAttention(nn.Module):
             extended_attention_mask = 1.0 - attention_mask[:, None, None, :]
             extended_attention_mask *= get_min_value(extended_attention_mask)
             attention_scores = attention_scores + extended_attention_mask
+        if self.attention_type == AttentionType.AUTOREGRESSION:
+            auto_regression_mask = torch.triu(torch.ones_like(attention_scores), diagonal=1)
+            auto_regression_mask *= get_min_value(auto_regression_mask)
+            attention_scores = attention_scores + auto_regression_mask
 
         attention_scores = self.dropout_attention_scores(attention_scores)
         attention_probs = self.softmax(attention_scores)
@@ -192,6 +199,7 @@ class BertAttention(nn.Module):
                  half_width_val=0,
                  dropout_alpha=0.0,
                  attention_head_size=None,
+                 attention_type=AttentionType.BIDIRECTIONAL,
                  output_attentions=False):
         super().__init__()
         self.self = BertSelfAttention(hidden_size=hidden_size,
@@ -200,6 +208,7 @@ class BertAttention(nn.Module):
                                       half_width_val=half_width_val,
                                       dropout_alpha=dropout_alpha,
                                       attention_head_size=attention_head_size,
+                                      attention_type=attention_type,
                                       output_attentions=output_attentions)
         self.dropout_self = VariationalNormalEpanechnikovDropout(
             input_size=self.self.all_head_size)
@@ -259,6 +268,7 @@ class BertLayer(nn.Module):
                  dropout_alpha=0.0,
                  attention_head_size=None,
                  hidden_act='ReLU',
+                 attention_type=AttentionType.BIDIRECTIONAL,
                  layer_norm_eps=1e-8,
                  output_attentions=False):
         super().__init__()
@@ -271,6 +281,7 @@ class BertLayer(nn.Module):
             half_width_val=half_width_val,
             dropout_alpha=dropout_alpha,
             attention_head_size=attention_head_size,
+            attention_type=attention_type,
             output_attentions=output_attentions)
 
         self.is_decoder = is_decoder
@@ -284,6 +295,7 @@ class BertLayer(nn.Module):
                 half_width_val=half_width_val,
                 dropout_alpha=dropout_alpha,
                 attention_head_size=attention_head_size,
+                attention_type=AttentionType.BIDIRECTIONAL,
                 output_attentions=output_attentions)
 
         self.feedforward = None
@@ -344,6 +356,7 @@ class BertEncoder(nn.Module):
                  dropout_alpha=0.0,
                  attention_head_size=None,
                  hidden_act='ReLU',
+                 attention_type=AttentionType.BIDIRECTIONAL,
                  layer_norm_eps=1e-8,
                  output_attentions=False,
                  output_hidden_states=False):
@@ -361,6 +374,7 @@ class BertEncoder(nn.Module):
                 dropout_alpha=dropout_alpha,
                 attention_head_size=attention_head_size,
                 hidden_act=hidden_act,
+                attention_type=attention_type,
                 layer_norm_eps=layer_norm_eps,
                 output_attentions=output_attentions)
             for _ in range(num_hidden_layers)])

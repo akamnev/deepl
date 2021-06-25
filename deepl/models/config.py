@@ -26,9 +26,10 @@ class VPP(IntEnumBase):
     LAST = auto()
 
 
-class VAEType(IntEnumBase):
-    """VAE encoder type"""
-    NORMAL_TANH_ABS = auto()
+class AttentionType(IntEnumBase):
+    """Attention decoder type"""
+    BIDIRECTIONAL = auto()
+    AUTOREGRESSION = auto()
 
 
 def set_config_attrib(obj, name, value):
@@ -96,6 +97,7 @@ class EncoderConfig(ConfigBase):
                  layer_norm_eps=1e-8,
                  padding_idx=0,
                  hidden_act='ReLU',
+                 attention_type=AttentionType.BIDIRECTIONAL,
                  output_attentions=False,
                  output_hidden_states=False):
         self.num_hidden_layers = num_hidden_layers
@@ -111,11 +113,19 @@ class EncoderConfig(ConfigBase):
         self.layer_norm_eps = layer_norm_eps
         self.padding_idx = padding_idx
         self.hidden_act = hidden_act
+        self.attention_type = attention_type
         self.output_attentions = output_attentions
         self.output_hidden_states = output_hidden_states
 
         if isinstance(self.device, str):
             self.device = torch.device(self.device)
+        if not isinstance(self.attention_type, AttentionType):
+            self.attention_type = AttentionType.from_name(self.attention_type)
+
+    def to_dict(self):
+        output = super().to_dict()
+        output['attention_type'] = self.attention_type.name
+        return output
 
 
 class EmbeddingsConfigBase(ConfigBase):

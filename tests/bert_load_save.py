@@ -49,6 +49,11 @@ def test_serialize_deserialize():
     LanguageModelConfig.from_dict(d)
 
 
+def test_config_to_json():
+    cfg = create_model_config(is_decoder=True)
+    d = cfg.to_json()
+
+
 def test_model_create():
     cfg = create_model_config(is_decoder=True)
     model = LanguageModel(cfg)
@@ -74,7 +79,7 @@ def test_model_lm_run():
     model = LanguageModel(cfg)
     input_ids = [list(range(5)), list(range(5))]
     attention_mask = torch.tensor([[1.0, 1.0, 1.0, 1.0, 1.0],
-                                   [1.0, 1.0, 1.0, 1.0, 1.0]])
+                                   [1.0, 1.0, 1.0, 1.0, 0.0]])
     labels_mask = torch.tensor([[0.0, 1.0, 0.0, 0.0, 1.0],
                                 [0.0, 0.0, 0.0, 1.0, 0.0]])
     labels_mask = labels_mask > 0.0
