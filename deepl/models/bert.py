@@ -64,6 +64,7 @@ class LanguageModel(LanguageModelBase):
                                encoder_attention_mask)
         outputs = {
             'embeddings': outputs[0],
+            'attention_mask': attention_mask,
             'self_attentions': outputs[1],
             'hidden_states': outputs[2],
             'cross_attentions': outputs[3],
