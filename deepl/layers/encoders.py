@@ -48,6 +48,7 @@ class BertSelfAttention(nn.Module):
         self._value_tensor = None
         self._score_tensor = None
         self._attention_mask_tensor = None
+        self._encoder_attention_mask_tensor = None
 
     def transpose_for_scores(self, x):
         new_x_shape = (x.size()[0], x.size()[1],
@@ -71,6 +72,10 @@ class BertSelfAttention(nn.Module):
         encoder_hidden_states=None,
         encoder_attention_mask=None,
     ):
+        if self.training:
+            self._attention_mask_tensor = attention_mask
+            self._encoder_attention_mask_tensor = encoder_attention_mask
+
         query_layer, key_layer, value_layer, attention_mask = self.get_query_key_value(
             hidden_states, attention_mask, encoder_hidden_states, encoder_attention_mask)
         attention_probs = self.get_attention_probs(query_layer, key_layer, attention_mask)
@@ -80,7 +85,6 @@ class BertSelfAttention(nn.Module):
         if self.training:
             self._value_tensor = value_layer
             self._score_tensor = attention_probs
-            self._attention_mask_tensor = attention_mask
         return outputs
 
     def get_query_key_value(self,
@@ -168,7 +172,10 @@ class BertSelfAttention(nn.Module):
         return attention_scores_pos
 
     def loss_value_unity(self):
-        mask = self._attention_mask_tensor
+        if self._encoder_attention_mask_tensor is None:
+            mask = self._attention_mask_tensor
+        else:
+            mask = self._encoder_attention_mask_tensor
         value = self._value_tensor
         value = value * mask[:, None, :, None]
         loss = (1.0 - torch.norm(value, dim=-1)) ** 2
@@ -184,9 +191,14 @@ class BertSelfAttention(nn.Module):
         """
         eps = 1e-8
         p = self._score_tensor
-        mask = self._attention_mask_tensor
-        p = p * mask[:, None, :, None] * mask[:, None, None, :]
-        norm = torch.sum(mask) * self.num_attention_heads
+        mask_output = self._attention_mask_tensor
+        if self._encoder_attention_mask_tensor is not None:
+            mask_input = self._encoder_attention_mask_tensor
+        else:
+            mask_input = self._attention_mask_tensor
+        mask = mask_output[:, None, :, None] * mask_input[:, None, None, :]
+        p = p * mask
+        norm = torch.sum(mask[..., 0]) * self.num_attention_heads
         loss = torch.sum(p * torch.log(p + eps)) / norm
         return loss
 
