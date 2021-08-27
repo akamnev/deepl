@@ -47,6 +47,7 @@ class BertSelfAttention(nn.Module):
                                               bias=False)
         self._value_tensor = None
         self._score_tensor = None
+        self._proba_tensor = None
         self._attention_mask_tensor = None
         self._encoder_attention_mask_tensor = None
 
@@ -84,7 +85,7 @@ class BertSelfAttention(nn.Module):
             else [context_layer]
         if self.training:
             self._value_tensor = value_layer
-            self._score_tensor = attention_probs
+            self._proba_tensor = attention_probs
         return outputs
 
     def get_query_key_value(self,
@@ -121,6 +122,8 @@ class BertSelfAttention(nn.Module):
             attention_scores = attention_scores + auto_regression_mask
 
         attention_scores = self.dropout_attention_scores(attention_scores)
+        if self.training:
+            self._score_tensor = attention_scores
         attention_probs = self.softmax(attention_scores)
         return attention_probs
 
@@ -189,8 +192,8 @@ class BertSelfAttention(nn.Module):
         для матриц внимания. Для регуляризации необходимо максимизировать
         значение.
         """
-        eps = 1e-8
-        p = self._score_tensor
+        s = self._score_tensor - torch.logsumexp(self._score_tensor, dim=-1, keepdim=True)
+        p = self._proba_tensor
         mask_output = self._attention_mask_tensor
         if self._encoder_attention_mask_tensor is not None:
             mask_input = self._encoder_attention_mask_tensor
@@ -198,8 +201,9 @@ class BertSelfAttention(nn.Module):
             mask_input = self._attention_mask_tensor
         mask = mask_output[:, None, :, None] * mask_input[:, None, None, :]
         p = p * mask
+        s = s * mask
         norm = torch.sum(mask[..., 0]) * self.num_attention_heads
-        loss = torch.sum(p * torch.log(p + eps)) / norm
+        loss = torch.sum(p * s) / norm
         return loss
 
 
