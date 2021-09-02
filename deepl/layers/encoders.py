@@ -401,13 +401,14 @@ class BertEncoder(nn.Module):
         hidden_states,
         attention_mask=None,
         encoder_hidden_states=None,
-        encoder_attention_mask=None
+        encoder_attention_mask=None,
+        n_layer=None,
     ):
         all_hidden_states = []
         all_self_attentions = []
         all_cross_attentions = []
 
-        for layer_module in self.layer:
+        for n, layer_module in enumerate(self.layer):
 
             if self.output_hidden_states:
                 all_hidden_states.append(hidden_states)
@@ -423,6 +424,9 @@ class BertEncoder(nn.Module):
                     all_self_attentions.extend(layer_outputs[1])
                 if len(layer_outputs) > 2:
                     all_cross_attentions.extend(layer_outputs[2])
+
+            if n_layer is not None and n + 1 >= n_layer:
+                break
 
         # Add last layer
         if self.output_hidden_states:

@@ -61,7 +61,8 @@ class LanguageModel(LanguageModelBase):
         outputs = self.encoder(hidden_states,
                                attention_mask,
                                encoder_hidden_states,
-                               encoder_attention_mask)
+                               encoder_attention_mask,
+                               n_layer=kwargs.get('n_layer', None))
         outputs = {
             'embeddings': outputs[0],
             'attention_mask': attention_mask,
