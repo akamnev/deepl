@@ -333,6 +333,10 @@ class AdaSGDW(Optimizer):
 
                 if group["weight_decay"] > 0.0:
                     p.add_(p.data, alpha=-step_size * group["weight_decay"])
+                if "l1" in group and group["l1"] > 0.0:
+                    p.add_(torch.sign(p.data), alpha=-step_size * group["l1"])
+                if "only_with_grad" in group and group["weight_decay"] > 0.0:
+                    p.add_(p.data * torch.abs(torch.sign(grad)), alpha=-step_size * group["weight_decay"])
 
         return loss
 
