@@ -1,4 +1,5 @@
 import torch
+from typing import List
 
 
 def get_min_value(tensor):
@@ -61,7 +62,7 @@ def kld_gaussian(mu, log_sigma, nu=0.0, rho=1.0):
     return 0.5 * (mean_term + variance_term - 1.0)
 
 
-def rand_epanechnikov_trig(shape, device, dtype=torch.float32):
+def rand_epanechnikov_trig(shape: List[int], device: torch.device, dtype: torch.dtype = torch.float32):
     # https://stats.stackexchange.com/questions/6643/what-is-the-closed-form-solution-for-the-inverse-cdf-for-epanechnikov
     xi = torch.rand(shape,
                     dtype=dtype,

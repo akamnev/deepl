@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from typing import Optional
 from scipy import special
 import math
 from .utils import kld_gaussian, rand_epanechnikov_trig
@@ -37,7 +38,10 @@ class VariationalBase(nn.Module):
         self.running_var.zero_()
         self.num_batches_tracked.zero_()
 
-    def update(self, input_vector, mask=None):
+    @torch.jit.unused
+    def update(self,
+               input_vector: torch.Tensor,
+               mask: Optional[torch.Tensor] = None):
         input_vector = input_vector.view(-1, self.input_size)
         if mask is not None:
             mask = mask.view(-1)
@@ -76,20 +80,26 @@ class VariationalGaussianDropout(VariationalBase):
         self.log_sigma.data.fill_(-1.0)
         self._mean = None
 
-    def forward(self, vector, mask=None):
+    def forward(self,
+                vector: torch.Tensor,
+                mask: Optional[torch.Tensor] = None):
+        epsilon = torch.randn(vector.size(), device=vector.device)
+        if self.truncate is not None:
+            epsilon = torch.fmod(epsilon, self.truncate)
+        if mask is not None:
+            epsilon = epsilon * mask[..., None]
+        variance = torch.exp(self.log_sigma)
         if self.training:
-            epsilon = torch.randn(vector.size(), device=vector.device)
-            if self.truncate is not None:
-                epsilon = torch.fmod(epsilon, self.truncate)
-            if mask is not None:
-                epsilon = epsilon * mask[..., None]
-            variance = torch.exp(self.log_sigma)
+            self._save_stat(vector)
 
-            self._mean = vector
-
-            vector = vector + variance * epsilon
+        vector = vector + variance * epsilon
+        if self.training:
             self.update(vector, mask)
         return vector
+
+    @torch.jit.unused
+    def _save_stat(self, vector):
+        self._mean = vector
 
     def kld(self, nu=0.0, rho=1.0):
         return kld_gaussian(self._mean, self.log_sigma, nu=nu, rho=rho)
@@ -104,18 +114,25 @@ class VariationalNormalEpanechnikovDropout(VariationalBase):
         self._const = 0.5*math.log(90.0*math.pi) - 7./6.
         self._shift = 0.5*math.log(5.0)
 
-    def forward(self, vector, mask=None):
+    def forward(self,
+                vector: torch.Tensor,
+                mask: Optional[torch.Tensor] = None):
+
+        epsilon = rand_epanechnikov_trig(vector.size(), device=vector.device)
+        if mask is not None:
+            epsilon = epsilon * mask[..., None]
+        variance = torch.exp(self.log_sigma)
         if self.training:
-            epsilon = rand_epanechnikov_trig(vector.size(), device=vector.device)
-            if mask is not None:
-                epsilon = epsilon * mask[..., None]
-            variance = torch.exp(self.log_sigma)
+            self._save_stat(vector)
 
-            self._mean = vector
-
-            vector = vector + variance * epsilon
+        vector = vector + variance * epsilon
+        if self.training:
             self.update(vector, mask)
         return vector
+
+    @torch.jit.unused
+    def _save_stat(self, vector):
+        self._mean = vector
 
     def kld(self, nu=0.0, rho=1.0):
         log_sigma = self.log_sigma - self._shift
@@ -138,18 +155,20 @@ class VariationalLogNormalGammaDropout(VariationalBase):
         self._coeff = None
 
     def forward(self, vector, mask=None):
+
+        epsilon = torch.randn(vector.size(), device=vector.device)
+        if self.truncate is not None:
+            epsilon = torch.fmod(epsilon, self.truncate)
+        xi = -0.5 * self.sigma * self.sigma + torch.abs(self.sigma) * epsilon
+
         if self.training:
-            epsilon = torch.randn(vector.size(), device=vector.device)
-            if self.truncate is not None:
-                epsilon = torch.fmod(epsilon, self.truncate)
-            xi = -0.5 * self.sigma * self.sigma + torch.abs(self.sigma) * epsilon
+            self._save_stat(vector)
 
-            self._mean = vector
+        if mask is not None:
+            xi = xi * mask[..., None]
 
-            if mask is not None:
-                xi = xi * mask[..., None]
-
-            vector = vector * torch.exp(xi)
+        vector = vector * torch.exp(xi)
+        if self.training:
             self.update(vector, mask)
         return vector
 
@@ -169,4 +188,8 @@ class VariationalLogNormalGammaDropout(VariationalBase):
     def _kld_coeff(alpha, beta):
         return special.loggamma(alpha) - alpha * math.log(beta) \
                - 0.5 * math.log(2 * math.pi) - 0.5
+
+    @torch.jit.unused
+    def _save_stat(self, vector):
+        self._mean = vector
 
