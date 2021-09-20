@@ -84,6 +84,39 @@ def mask_token_with_unity_mlm(tokens, proba_unity, proba_token,
     return sequence, labels, masked_pos
 
 
+def mask_token_with_true_rand_mlm(
+        tokens, proba_mask, proba_true_token, proba_random_token,
+        random_token_range,
+        id_mask, id_ignore,
+        sampler=random_token_sample):
+    rng = np.random.default_rng()
+    sequence, labels, masked_pos = [], [], []
+    for b in tokens:
+        s = b[:]
+        v = [id_ignore] * len(s)
+        pos = []
+        num_token_to_mask = rng.binomial(len(b), proba_mask)
+        num_token_to_mask = max(1, num_token_to_mask)
+        i_to_mask = sampler(b, size=num_token_to_mask)
+        for i in i_to_mask:
+            u = rng.uniform()
+            if u < proba_true_token:
+                # do not replace token
+                v[i] = s[i]
+            elif u < proba_true_token + proba_random_token:
+                # replace by random token
+                v[i] = s[i]
+                s[i] = rng.integers(random_token_range[0], random_token_range[1])
+            else:
+                v[i] = s[i]
+                s[i] = id_mask
+                pos.append(i)
+        sequence.append(s)
+        labels.append(v)
+        masked_pos.append(pos)
+    return sequence, labels, masked_pos
+
+
 def mask_token_with_unity_lm(tokens, proba_unity,
                              id_bos, id_eos, id_ignore,
                              sampler=random_token_sample):
