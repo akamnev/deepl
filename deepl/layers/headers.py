@@ -2,7 +2,7 @@ import torch.nn as nn
 from .activations import get_activation
 from .dropout import VariationalNormalEpanechnikovDropout
 from ..models.config import LanguageHeadConfig, VectorMeanHeadConfig, \
-    VectorMaxHeadConfig, LinRegHeadConfig
+    VectorMaxHeadConfig, LinRegHeadConfig, LanguageHeadLNConfig
 
 
 def get_head_by_config(config):
@@ -11,6 +11,13 @@ def get_head_by_config(config):
             hidden_size=config.hidden_size,
             hidden_act=config.hidden_act,
             vocab_size=config.vocab_size
+        )
+    elif isinstance(config, LanguageHeadLNConfig):
+        return LanguageModelLNHead(
+            hidden_size=config.hidden_size,
+            hidden_act=config.hidden_act,
+            vocab_size=config.vocab_size,
+            layer_norm_eps=config.layer_norm_eps
         )
     elif isinstance(config, VectorMeanHeadConfig):
         return VectorMeanHead()
@@ -51,6 +58,17 @@ class LanguageModelHead(HeadBase):
         scores = self.decoder(hidden)
         scores = self.decoder_dropout(scores, attention_mask)
         return scores
+
+
+class LanguageModelLNHead(LanguageModelHead):
+    def __init__(self, hidden_size, hidden_act, vocab_size, layer_norm_eps=1e-8):
+        super().__init__(hidden_size, hidden_act, vocab_size)
+        self.layer_norm = nn.LayerNorm(
+            hidden_size, eps=layer_norm_eps)
+
+    def forward(self, embedding, attention_mask, **kwargs):
+        embedding = self.layer_norm(embedding)
+        return super().forward(embedding, attention_mask, **kwargs)
 
 
 class VectorMeanHead(HeadBase):

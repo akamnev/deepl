@@ -183,6 +183,18 @@ class LanguageHeadConfig(HeadConfigBase):
         self.vocab_size = vocab_size
 
 
+class LanguageHeadLNConfig(HeadConfigBase):
+    def __init__(self,
+                 hidden_size,
+                 hidden_act,
+                 vocab_size,
+                 layer_norm_eps):
+        self.hidden_size = hidden_size
+        self.hidden_act = hidden_act
+        self.vocab_size = vocab_size
+        self.layer_norm_eps = layer_norm_eps
+
+
 class VectorMeanHeadConfig(HeadConfigBase):
     pass
 
@@ -228,6 +240,7 @@ class LanguageModelConfig(ConfigBase):
         for name, head in heads.items():
             if isinstance(head, dict):
                 for cls in (LanguageHeadConfig,
+                            LanguageHeadLNConfig,
                             LinRegHeadConfig,
                             VectorMeanHeadConfig,
                             VectorMaxHeadConfig):
@@ -235,6 +248,7 @@ class LanguageModelConfig(ConfigBase):
                         head = cls.from_dict(head)
                         break
             if not isinstance(head, (LanguageHeadConfig,
+                                     LanguageHeadLNConfig,
                                      LinRegHeadConfig,
                                      VectorMeanHeadConfig,
                                      VectorMaxHeadConfig)):
