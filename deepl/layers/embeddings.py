@@ -111,10 +111,17 @@ class VectorLastEmbeddings(VectorEmbeddingsBase):
 
 class VectorInsideEmbeddings(VectorEmbeddingsBase):
     def forward(self, input_ids, vectors, input_pos):
-        # TODO: add position embeddings
-        raise NotImplementedError
-
         max_length = max([len(x) for x in input_ids])
+
+        position_embeddings = None
+        if self.max_position > 0:
+            position_ids = [[xi for xi in range(self.padding_idx + 1, len(x) + self.padding_idx + 1)]
+                            + [self.padding_idx] * (max_length - len(x))
+                            for x in input_ids]
+            position_ids = torch.tensor(position_ids, dtype=torch.long,
+                                        device=self.device)
+            position_embeddings = self.position_embeddings(position_ids)
+
         inputs_embeds = []
         for n, (seq, pos) in enumerate(zip(input_ids, input_pos)):
             pos.sort()
@@ -142,5 +149,9 @@ class VectorInsideEmbeddings(VectorEmbeddingsBase):
             inputs_embeds.append(seq_embeds)
 
         embeddings = torch.cat(inputs_embeds, dim=0)
+
+        if position_embeddings is not None:
+            embeddings = embeddings + position_embeddings
+
         embeddings = self.dropout(embeddings)
         return embeddings

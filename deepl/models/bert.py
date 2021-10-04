@@ -124,7 +124,7 @@ class VectorLanguageModel(LanguageModelBase):
                 attention_mask = get_vector_attention_mask(input_ids)
         attention_mask = torch.as_tensor(attention_mask,
                                          dtype=hidden_states.dtype,
-                                         device=self.config.device)
+                                         device=hidden_states.device)
 
         outputs = self.encoder(
             hidden_states=hidden_states,

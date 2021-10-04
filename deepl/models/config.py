@@ -151,11 +151,13 @@ class VectorEmbeddingsConfig(EmbeddingsConfigBase):
                  vocab_size,
                  hidden_size,
                  model_type,
+                 max_position=0,
                  padding_idx=0,
                  device='cpu'):
         super().__init__(
             vocab_size=vocab_size,
             hidden_size=hidden_size,
+            max_position=max_position,
             padding_idx=padding_idx,
             device=device)
         self.model_type = model_type
