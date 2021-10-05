@@ -201,6 +201,15 @@ class VectorMeanHeadConfig(HeadConfigBase):
     pass
 
 
+class VectorMeanLNHeadConfig(HeadConfigBase):
+    """Голова для совместимости с предыдущей версией векторизатора"""
+    def __init__(self,
+                 hidden_size,
+                 layer_norm_eps):
+        self.hidden_size = hidden_size
+        self.layer_norm_eps = layer_norm_eps
+
+
 class VectorMaxHeadConfig(HeadConfigBase):
     pass
 
@@ -245,6 +254,7 @@ class LanguageModelConfig(ConfigBase):
                             LanguageHeadLNConfig,
                             LinRegHeadConfig,
                             VectorMeanHeadConfig,
+                            VectorMeanLNHeadConfig,
                             VectorMaxHeadConfig):
                     if head['class_name'] == cls.__name__:
                         head = cls.from_dict(head)
@@ -253,6 +263,7 @@ class LanguageModelConfig(ConfigBase):
                                      LanguageHeadLNConfig,
                                      LinRegHeadConfig,
                                      VectorMeanHeadConfig,
+                                     VectorMeanLNHeadConfig,
                                      VectorMaxHeadConfig)):
                 raise ValueError(head)
             self.heads[name] = head

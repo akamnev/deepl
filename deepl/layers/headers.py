@@ -2,7 +2,8 @@ import torch.nn as nn
 from .activations import get_activation
 from .dropout import VariationalNormalEpanechnikovDropout
 from ..models.config import LanguageHeadConfig, VectorMeanHeadConfig, \
-    VectorMaxHeadConfig, LinRegHeadConfig, LanguageHeadLNConfig
+    VectorMaxHeadConfig, LinRegHeadConfig, LanguageHeadLNConfig, \
+    VectorMeanLNHeadConfig
 
 
 def get_head_by_config(config):
@@ -21,6 +22,11 @@ def get_head_by_config(config):
         )
     elif isinstance(config, VectorMeanHeadConfig):
         return VectorMeanHead()
+    elif isinstance(config, VectorMeanLNHeadConfig):
+        return VectorMeanLNHead(
+            hidden_size=config.hidden_size,
+            layer_norm_eps=config.layer_norm_eps
+        )
     elif isinstance(config, VectorMaxHeadConfig):
         return VectorMaxHead()
     elif isinstance(config, LinRegHeadConfig):
@@ -80,6 +86,24 @@ class VectorMeanHead(HeadBase):
                 embedding,
                 attention_mask=None,
                 **kwargs):
+        norm = attention_mask.sum(dim=1, keepdim=True) + self.eps
+        vectors = (embedding * attention_mask[..., None]).sum(dim=1) / norm
+        return vectors
+
+
+class VectorMeanLNHead(HeadBase):
+    def __init__(self,
+                 hidden_size,
+                 layer_norm_eps):
+        super().__init__()
+        self.layer_norm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
+        self.eps = 1e-8
+
+    def forward(self,
+                embedding,
+                attention_mask=None,
+                **kwargs):
+        embedding = self.layer_norm(embedding)
         norm = attention_mask.sum(dim=1, keepdim=True) + self.eps
         vectors = (embedding * attention_mask[..., None]).sum(dim=1) / norm
         return vectors
