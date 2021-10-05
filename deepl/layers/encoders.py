@@ -224,6 +224,22 @@ class BertSelfAttention(nn.Module):
         loss = torch.sum(p * s) / norm
         return loss
 
+    def loss_score_mean(self):
+        """ Идея зафиксировать среднее значение для score
+        """
+        s = self._score_tensor
+        mask_output = self._attention_mask_tensor
+        if self._encoder_attention_mask_tensor is not None:
+            mask_input = self._encoder_attention_mask_tensor
+        else:
+            mask_input = self._attention_mask_tensor
+        mask = mask_output[:, None, :, None] * mask_input[:, None, None, :]
+        s = torch.sum(s * mask, dim=-1)
+        norm = torch.sum(mask, dim=-1)
+        s = s / (norm + 1e-8)
+        loss = torch.mean(s ** 2)
+        return loss
+
 
 class BertAttention(nn.Module):
     def __init__(self,
