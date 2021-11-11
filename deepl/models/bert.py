@@ -130,7 +130,8 @@ class VectorLanguageModel(LanguageModelBase):
             hidden_states=hidden_states,
             attention_mask=attention_mask,
             encoder_hidden_states=encoder_hidden_states,
-            encoder_attention_mask=encoder_attention_mask)
+            encoder_attention_mask=encoder_attention_mask,
+            n_layer=kwargs.get('n_layer', None))
 
         outputs = {
             'embeddings': outputs[0],
