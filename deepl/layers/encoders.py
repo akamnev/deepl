@@ -59,7 +59,7 @@ class BertSelfAttention(nn.Module):
 
     def dropout_attention_scores(self, scores):
         if self.training and self.dropout_alpha > 0:
-            importance = scores.detach()
+            importance = self.softmax(scores.detach())
             importance = torch.pow(importance, self.dropout_alpha)
             importance /= torch.sum(importance, dim=-1, keepdim=True)
             mask = torch.bernoulli(1.0 - importance)
@@ -121,9 +121,10 @@ class BertSelfAttention(nn.Module):
             auto_regression_mask *= get_min_value(auto_regression_mask)
             attention_scores = attention_scores + auto_regression_mask
 
-        attention_scores = self.dropout_attention_scores(attention_scores)
         if self.training:
             self._score_tensor = attention_scores
+
+        attention_scores = self.dropout_attention_scores(attention_scores)
         attention_probs = self.softmax(attention_scores)
         return attention_probs
 
