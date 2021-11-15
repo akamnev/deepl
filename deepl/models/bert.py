@@ -29,6 +29,7 @@ class LanguageModelBase(ModelBase):
             attention_type=config.encoder.attention_type,
             hidden_act=config.encoder.hidden_act,
             layer_norm_eps=config.encoder.layer_norm_eps,
+            self_attention_bias=config.encoder.self_attention_bias,
             output_attentions=config.encoder.output_attentions,
             output_hidden_states=config.encoder.output_hidden_states)
         self.heads = torch.nn.ModuleDict(

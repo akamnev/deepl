@@ -98,6 +98,7 @@ class EncoderConfig(ConfigBase):
                  padding_idx=0,
                  hidden_act='ReLU',
                  attention_type=AttentionType.BIDIRECTIONAL,
+                 self_attention_bias=True,
                  output_attentions=False,
                  output_hidden_states=False):
         self.num_hidden_layers = num_hidden_layers
@@ -114,6 +115,7 @@ class EncoderConfig(ConfigBase):
         self.padding_idx = padding_idx
         self.hidden_act = hidden_act
         self.attention_type = attention_type
+        self.self_attention_bias = self_attention_bias
         self.output_attentions = output_attentions
         self.output_hidden_states = output_hidden_states
 

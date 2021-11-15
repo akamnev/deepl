@@ -16,6 +16,7 @@ class BertSelfAttention(nn.Module):
                  dropout_alpha=0.0,
                  attention_head_size=None,
                  attention_type=AttentionType.BIDIRECTIONAL,
+                 self_attention_bias=True,
                  output_attentions=False):
         super().__init__()
         self.output_attentions = output_attentions
@@ -28,9 +29,12 @@ class BertSelfAttention(nn.Module):
 
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
-        self.query = nn.Linear(hidden_size, self.all_head_size)
-        self.key = nn.Linear(hidden_size, self.all_head_size)
-        self.value = nn.Linear(hidden_size, self.all_head_size)
+        self.query = nn.Linear(
+            hidden_size, self.all_head_size, bias=self_attention_bias)
+        self.key = nn.Linear(
+            hidden_size, self.all_head_size, bias=self_attention_bias)
+        self.value = nn.Linear(
+            hidden_size, self.all_head_size, bias=self_attention_bias)
         self.softmax = nn.Softmax(dim=-1)
 
         self.dropout_alpha = dropout_alpha
@@ -251,6 +255,7 @@ class BertAttention(nn.Module):
                  dropout_alpha=0.0,
                  attention_head_size=None,
                  attention_type=AttentionType.BIDIRECTIONAL,
+                 self_attention_bias=True,
                  output_attentions=False):
         super().__init__()
         self.self = BertSelfAttention(hidden_size=hidden_size,
@@ -260,6 +265,7 @@ class BertAttention(nn.Module):
                                       dropout_alpha=dropout_alpha,
                                       attention_head_size=attention_head_size,
                                       attention_type=attention_type,
+                                      self_attention_bias=self_attention_bias,
                                       output_attentions=output_attentions)
         self.dropout_self = VariationalNormalEpanechnikovDropout(
             input_size=self.self.all_head_size)
@@ -321,6 +327,7 @@ class BertLayer(nn.Module):
                  hidden_act='ReLU',
                  attention_type=AttentionType.BIDIRECTIONAL,
                  layer_norm_eps=1e-8,
+                 self_attention_bias=True,
                  output_attentions=False):
         super().__init__()
         self.layer_norm_attention = nn.LayerNorm(
@@ -333,6 +340,7 @@ class BertLayer(nn.Module):
             dropout_alpha=dropout_alpha,
             attention_head_size=attention_head_size,
             attention_type=attention_type,
+            self_attention_bias=self_attention_bias,
             output_attentions=output_attentions)
 
         self.is_decoder = is_decoder
@@ -409,6 +417,7 @@ class BertEncoder(nn.Module):
                  hidden_act='ReLU',
                  attention_type=AttentionType.BIDIRECTIONAL,
                  layer_norm_eps=1e-8,
+                 self_attention_bias=True,
                  output_attentions=False,
                  output_hidden_states=False):
         super().__init__()
@@ -427,6 +436,7 @@ class BertEncoder(nn.Module):
                 hidden_act=hidden_act,
                 attention_type=attention_type,
                 layer_norm_eps=layer_norm_eps,
+                self_attention_bias=self_attention_bias,
                 output_attentions=output_attentions)
             for _ in range(num_hidden_layers)])
         self.num_hidden_layers = num_hidden_layers
