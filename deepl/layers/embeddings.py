@@ -66,15 +66,26 @@ class VectorEmbeddingsBase(WordEmbeddingsBase):
 
 
 class VectorFirstEmbeddings(VectorEmbeddingsBase):
-    def forward(self, input_ids, vectors, input_pos):
-        # TODO: add position embeddings
-        raise NotImplementedError
+    def forward(self, input_ids, vectors, input_pos=None):
         max_length = max([len(x) for x in input_ids])
+
+        position_embeddings = None
+        if self.max_position > 0:
+            position_ids = [[xi for xi in range(self.padding_idx + 1, len(x) + self.padding_idx + 1)]
+                            + [self.padding_idx] * (max_length - len(x))
+                            for x in input_ids]
+            position_ids = torch.tensor(position_ids, dtype=torch.long,
+                                        device=self.device)
+            position_embeddings = self.position_embeddings(position_ids)
+
         input_ids = [x + [self.padding_idx] * (max_length - len(x))
                      for x in input_ids]
         input_ids = torch.tensor(input_ids, dtype=torch.long,
                                  device=self.device)
         inputs_embeds = self.word_embeddings(input_ids)
+
+        if position_embeddings is not None:
+            inputs_embeds = inputs_embeds + position_embeddings
 
         vectors = torch.as_tensor(vectors, device=self.device,
                                   dtype=inputs_embeds.dtype)
