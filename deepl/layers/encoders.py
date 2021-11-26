@@ -239,6 +239,9 @@ class BertSelfAttention(nn.Module):
         else:
             mask_input = self._attention_mask_tensor
         mask = mask_output[:, None, :, None] * mask_input[:, None, None, :]
+        if self.attention_type == AttentionType.AUTOREGRESSION:
+            mask *= torch.tril(torch.ones_like(mask), diagonal=0)
+
         s = torch.sum(s * mask, dim=-1)
         norm = torch.sum(mask, dim=-1)
         s = s / (norm + 1e-8)
