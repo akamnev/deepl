@@ -55,6 +55,7 @@ class BertSelfAttention(nn.Module):
         self._score_tensor = None
         self._proba_tensor = None
         self._attention_mask_tensor = None
+        self._extended_attention_mask_tensor = None
         self._encoder_attention_mask_tensor = None
 
     def transpose_for_scores(self, x):
@@ -130,6 +131,8 @@ class BertSelfAttention(nn.Module):
         if self.attention_type == AttentionType.AUTOREGRESSION:
             auto_regression_mask = torch.tril(torch.ones_like(attention_scores, dtype=torch.bool), diagonal=0)
             extended_attention_mask *= auto_regression_mask
+        if self.training:
+            self._extended_attention_mask_tensor = extended_attention_mask.to(torch.float32)
         extended_attention_mask = (~extended_attention_mask).to(torch.float32)
         extended_attention_mask *= get_min_value(extended_attention_mask)
         attention_scores = attention_scores + extended_attention_mask
@@ -227,18 +230,8 @@ class BertSelfAttention(nn.Module):
         s = self._score_tensor - torch.logsumexp(self._score_tensor, dim=-1, keepdim=True)
         p = self._proba_tensor
         mask_output = self._attention_mask_tensor
-        if self._encoder_attention_mask_tensor is not None:
-            mask_input = self._encoder_attention_mask_tensor
-        else:
-            mask_input = self._attention_mask_tensor
-        mask = mask_output[:, None, :, None] * mask_input[:, None, None, :]
-        if self.attention_half_width is not None:
-            ones = torch.ones_like(mask)
-            ma = torch.triu(ones, diagonal=-self.attention_half_width)
-            mb = torch.triu(ones, diagonal=self.attention_half_width + 1)
-            mask *= ma * (1.0 - mb)
-        if self.attention_type == AttentionType.AUTOREGRESSION:
-            mask *= torch.tril(torch.ones_like(mask))
+        mask_input = self._extended_attention_mask_tensor
+        mask = mask_output[:, None, :, None] * mask_input
         p = p * mask
         s = s * mask
         norm = torch.sum(mask[..., 0]) * self.num_attention_heads
@@ -250,19 +243,8 @@ class BertSelfAttention(nn.Module):
         """
         s = self._score_tensor
         mask_output = self._attention_mask_tensor
-        if self._encoder_attention_mask_tensor is not None:
-            mask_input = self._encoder_attention_mask_tensor
-        else:
-            mask_input = self._attention_mask_tensor
-        mask = mask_output[:, None, :, None] * mask_input[:, None, None, :]
-        if self.attention_half_width is not None:
-            ones = torch.ones_like(mask)
-            ma = torch.triu(ones, diagonal=-self.attention_half_width)
-            mb = torch.triu(ones, diagonal=self.attention_half_width + 1)
-            mask *= ma * (1.0 - mb)
-        if self.attention_type == AttentionType.AUTOREGRESSION:
-            mask *= torch.tril(torch.ones_like(mask), diagonal=0)
-
+        mask_input = self._extended_attention_mask_tensor
+        mask = mask_output[:, None, :, None] * mask_input
         s = torch.sum(s * mask, dim=-1)
         norm = torch.sum(mask, dim=-1)
         s = s / (norm + 1e-8)
