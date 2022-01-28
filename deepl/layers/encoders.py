@@ -15,6 +15,7 @@ class BertSelfAttention(nn.Module):
                  half_width_val=0,
                  dropout_alpha=0.0,
                  attention_head_size=None,
+                 attention_half_width=None,
                  attention_type=AttentionType.BIDIRECTIONAL,
                  self_attention_bias=True,
                  output_attentions=False):
@@ -25,6 +26,7 @@ class BertSelfAttention(nn.Module):
             self.attention_head_size = int(hidden_size / num_attention_heads)
         else:
             self.attention_head_size = attention_head_size
+        self.attention_half_width = attention_half_width
         self.attention_type = attention_type
 
         self.all_head_size = self.num_attention_heads * self.attention_head_size
@@ -113,17 +115,24 @@ class BertSelfAttention(nn.Module):
 
     def get_attention_probs(self, query_layer, key_layer, attention_mask):
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+        extended_attention_mask = torch.ones_like(attention_scores, dtype=torch.bool)
         if self.half_width_key > 0:
             attention_scores_pos = self.get_key_position_score(query_layer, key_layer)
             attention_scores = attention_scores + attention_scores_pos
         if attention_mask is not None:
-            extended_attention_mask = 1.0 - attention_mask[:, None, None, :]
-            extended_attention_mask *= get_min_value(extended_attention_mask)
-            attention_scores = attention_scores + extended_attention_mask
+            extended_attention_mask *= attention_mask[:, None, None, :].to(torch.bool)
+        if self.attention_half_width is not None:
+            ones = torch.ones_like(attention_scores, dtype=torch.bool)
+            ma = torch.triu(ones, diagonal=-self.attention_half_width)
+            mb = torch.triu(ones, diagonal=self.attention_half_width+1)
+            local_attention_mask = ma * ~ mb
+            extended_attention_mask *= local_attention_mask
         if self.attention_type == AttentionType.AUTOREGRESSION:
-            auto_regression_mask = torch.triu(torch.ones_like(attention_scores), diagonal=1)
-            auto_regression_mask *= get_min_value(auto_regression_mask)
-            attention_scores = attention_scores + auto_regression_mask
+            auto_regression_mask = torch.tril(torch.ones_like(attention_scores, dtype=torch.bool), diagonal=0)
+            extended_attention_mask *= auto_regression_mask
+        extended_attention_mask = (~extended_attention_mask).to(torch.float32)
+        extended_attention_mask *= get_min_value(extended_attention_mask)
+        attention_scores = attention_scores + extended_attention_mask
 
         if self.training:
             self._score_tensor = attention_scores
@@ -223,6 +232,13 @@ class BertSelfAttention(nn.Module):
         else:
             mask_input = self._attention_mask_tensor
         mask = mask_output[:, None, :, None] * mask_input[:, None, None, :]
+        if self.attention_half_width is not None:
+            ones = torch.ones_like(mask)
+            ma = torch.triu(ones, diagonal=-self.attention_half_width)
+            mb = torch.triu(ones, diagonal=self.attention_half_width + 1)
+            mask *= ma * (1.0 - mb)
+        if self.attention_type == AttentionType.AUTOREGRESSION:
+            mask *= torch.tril(torch.ones_like(mask))
         p = p * mask
         s = s * mask
         norm = torch.sum(mask[..., 0]) * self.num_attention_heads
@@ -239,6 +255,11 @@ class BertSelfAttention(nn.Module):
         else:
             mask_input = self._attention_mask_tensor
         mask = mask_output[:, None, :, None] * mask_input[:, None, None, :]
+        if self.attention_half_width is not None:
+            ones = torch.ones_like(mask)
+            ma = torch.triu(ones, diagonal=-self.attention_half_width)
+            mb = torch.triu(ones, diagonal=self.attention_half_width + 1)
+            mask *= ma * (1.0 - mb)
         if self.attention_type == AttentionType.AUTOREGRESSION:
             mask *= torch.tril(torch.ones_like(mask), diagonal=0)
 
@@ -257,6 +278,7 @@ class BertAttention(nn.Module):
                  half_width_val=0,
                  dropout_alpha=0.0,
                  attention_head_size=None,
+                 attention_half_width=None,
                  attention_type=AttentionType.BIDIRECTIONAL,
                  self_attention_bias=True,
                  output_attentions=False):
@@ -267,6 +289,7 @@ class BertAttention(nn.Module):
                                       half_width_val=half_width_val,
                                       dropout_alpha=dropout_alpha,
                                       attention_head_size=attention_head_size,
+                                      attention_half_width=attention_half_width,
                                       attention_type=attention_type,
                                       self_attention_bias=self_attention_bias,
                                       output_attentions=output_attentions)
@@ -328,6 +351,7 @@ class BertLayer(nn.Module):
                  dropout_alpha=0.0,
                  attention_head_size=None,
                  hidden_act='ReLU',
+                 attention_half_width=None,
                  attention_type=AttentionType.BIDIRECTIONAL,
                  layer_norm_eps=1e-8,
                  self_attention_bias=True,
@@ -342,6 +366,7 @@ class BertLayer(nn.Module):
             half_width_val=half_width_val,
             dropout_alpha=dropout_alpha,
             attention_head_size=attention_head_size,
+            attention_half_width=attention_half_width,
             attention_type=attention_type,
             self_attention_bias=self_attention_bias,
             output_attentions=output_attentions)
@@ -418,6 +443,7 @@ class BertEncoder(nn.Module):
                  dropout_alpha=0.0,
                  attention_head_size=None,
                  hidden_act='ReLU',
+                 attention_half_width=None,
                  attention_type=AttentionType.BIDIRECTIONAL,
                  layer_norm_eps=1e-8,
                  self_attention_bias=True,
@@ -437,6 +463,7 @@ class BertEncoder(nn.Module):
                 dropout_alpha=dropout_alpha,
                 attention_head_size=attention_head_size,
                 hidden_act=hidden_act,
+                attention_half_width=attention_half_width,
                 attention_type=attention_type,
                 layer_norm_eps=layer_norm_eps,
                 self_attention_bias=self_attention_bias,

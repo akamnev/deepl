@@ -26,6 +26,7 @@ class LanguageModelBase(ModelBase):
             is_decoder=config.encoder.is_decoder,
             dropout_alpha=config.encoder.dropout_alpha,
             attention_head_size=config.encoder.attention_head_size,
+            attention_half_width=config.encoder.attention_half_width,
             attention_type=config.encoder.attention_type,
             hidden_act=config.encoder.hidden_act,
             layer_norm_eps=config.encoder.layer_norm_eps,

@@ -97,6 +97,7 @@ class EncoderConfig(ConfigBase):
                  layer_norm_eps=1e-8,
                  padding_idx=0,
                  hidden_act='ReLU',
+                 attention_half_width=None,
                  attention_type=AttentionType.BIDIRECTIONAL,
                  self_attention_bias=True,
                  output_attentions=False,
@@ -114,6 +115,7 @@ class EncoderConfig(ConfigBase):
         self.layer_norm_eps = layer_norm_eps
         self.padding_idx = padding_idx
         self.hidden_act = hidden_act
+        self.attention_half_width = attention_half_width
         self.attention_type = attention_type
         self.self_attention_bias = self_attention_bias
         self.output_attentions = output_attentions
