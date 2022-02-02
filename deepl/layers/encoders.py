@@ -17,10 +17,8 @@ class BertSelfAttention(nn.Module):
                  attention_head_size=None,
                  attention_half_width=None,
                  attention_type=AttentionType.BIDIRECTIONAL,
-                 self_attention_bias=True,
-                 output_attentions=False):
+                 self_attention_bias=True):
         super().__init__()
-        self.output_attentions = output_attentions
         self.num_attention_heads = num_attention_heads
         if attention_head_size is None:
             self.attention_head_size = int(hidden_size / num_attention_heads)
@@ -88,12 +86,11 @@ class BertSelfAttention(nn.Module):
             hidden_states, attention_mask, encoder_hidden_states, encoder_attention_mask)
         attention_probs = self.get_attention_probs(query_layer, key_layer, attention_mask)
         context_layer = self.get_context_layer(attention_probs, value_layer)
-        outputs = [context_layer, attention_probs] if self.output_attentions \
-            else [context_layer]
+
         if self.training:
             self._value_tensor = value_layer
             self._proba_tensor = attention_probs
-        return outputs
+        return context_layer
 
     def get_query_key_value(self,
                             hidden_states,
@@ -171,8 +168,8 @@ class BertSelfAttention(nn.Module):
     def _idx_val(n: int, m: int, half_width: int, device: torch.device):
         ii = torch.arange(0, n, device=device)
         jj = torch.arange(2 * half_width + 1, dtype=torch.int64, device=device)
-        jj = jj[None, :]
-        ii = ii[:, None]
+        jj = jj.view(1, -1)
+        ii = ii.view(-1, 1)
         ss = ii * (2 * half_width + 1)
         mask = ii + jj
         mask = (half_width <= mask) * (mask < m + half_width)
@@ -234,7 +231,7 @@ class BertSelfAttention(nn.Module):
         mask = mask_output[:, None, :, None] * mask_input
         p = p * mask
         s = s * mask
-        norm = torch.sum(mask[..., 0]) * self.num_attention_heads
+        norm = torch.sum(mask[:, 0, :, 0]) * self.num_attention_heads
         loss = torch.sum(p * s) / norm
         return loss
 
@@ -262,8 +259,7 @@ class BertAttention(nn.Module):
                  attention_head_size=None,
                  attention_half_width=None,
                  attention_type=AttentionType.BIDIRECTIONAL,
-                 self_attention_bias=True,
-                 output_attentions=False):
+                 self_attention_bias=True):
         super().__init__()
         self.self = BertSelfAttention(hidden_size=hidden_size,
                                       num_attention_heads=num_attention_heads,
@@ -273,8 +269,7 @@ class BertAttention(nn.Module):
                                       attention_head_size=attention_head_size,
                                       attention_half_width=attention_half_width,
                                       attention_type=attention_type,
-                                      self_attention_bias=self_attention_bias,
-                                      output_attentions=output_attentions)
+                                      self_attention_bias=self_attention_bias)
         self.dropout_self = VariationalNormalEpanechnikovDropout(
             input_size=self.self.all_head_size)
         self.dense_output = nn.Linear(self.self.all_head_size, hidden_size)
@@ -292,11 +287,10 @@ class BertAttention(nn.Module):
                                  attention_mask,
                                  encoder_hidden_states=encoder_hidden_states,
                                  encoder_attention_mask=encoder_attention_mask)
-        self_attention_outputs = self.dropout_self(self_outputs[0], attention_mask)
+        self_attention_outputs = self.dropout_self(self_outputs, attention_mask)
         attention_outputs = self.dense_output(self_attention_outputs)
         attention_outputs = self.dropout_output(attention_outputs, attention_mask)
-        outputs = [attention_outputs] + self_outputs[1:]
-        return outputs
+        return attention_outputs
 
 
 class BertFeedForward(nn.Module):
@@ -336,8 +330,7 @@ class BertLayer(nn.Module):
                  attention_half_width=None,
                  attention_type=AttentionType.BIDIRECTIONAL,
                  layer_norm_eps=1e-8,
-                 self_attention_bias=True,
-                 output_attentions=False):
+                 self_attention_bias=True):
         super().__init__()
         self.layer_norm_attention = nn.LayerNorm(
             hidden_size, eps=layer_norm_eps)
@@ -350,8 +343,7 @@ class BertLayer(nn.Module):
             attention_head_size=attention_head_size,
             attention_half_width=attention_half_width,
             attention_type=attention_type,
-            self_attention_bias=self_attention_bias,
-            output_attentions=output_attentions)
+            self_attention_bias=self_attention_bias)
 
         self.is_decoder = is_decoder
         if self.is_decoder:
@@ -364,8 +356,7 @@ class BertLayer(nn.Module):
                 half_width_val=half_width_val,
                 dropout_alpha=dropout_alpha,
                 attention_head_size=attention_head_size,
-                attention_type=AttentionType.BIDIRECTIONAL,
-                output_attentions=output_attentions)
+                attention_type=AttentionType.BIDIRECTIONAL)
 
         self.feedforward = None
         if intermediate_size > 0:
@@ -384,23 +375,19 @@ class BertLayer(nn.Module):
         encoder_attention_mask=None
     ):
         hidden_states = self.layer_norm_attention(hidden_states)
-        self_attention_outputs = self.attention(
+        attention_output = self.attention(
             hidden_states=hidden_states,
             attention_mask=attention_mask)
-        attention_output = self_attention_outputs[0]
         hidden_states = hidden_states + attention_output
-        outputs = self_attention_outputs[1:]
 
         if self.is_decoder:
             hidden_states = self.layer_norm_cross_attention(hidden_states)
-            cross_attention_outputs = self.cross_attention(
+            attention_output = self.cross_attention(
                 hidden_states=hidden_states,
                 attention_mask=attention_mask,
                 encoder_hidden_states=encoder_hidden_states,
                 encoder_attention_mask=encoder_attention_mask)
-            attention_output = cross_attention_outputs[0]
             hidden_states = hidden_states + attention_output
-            outputs = outputs + cross_attention_outputs[1:]
 
         if self.feedforward is not None:
             hidden_states = self.layer_norm_feedforward(hidden_states)
@@ -409,8 +396,7 @@ class BertLayer(nn.Module):
                 attention_mask=attention_mask)
             hidden_states = hidden_states + feedforward_output
 
-        outputs = [hidden_states] + outputs
-        return outputs
+        return hidden_states
 
 
 class BertEncoder(nn.Module):
@@ -429,10 +415,8 @@ class BertEncoder(nn.Module):
                  attention_type=AttentionType.BIDIRECTIONAL,
                  layer_norm_eps=1e-8,
                  self_attention_bias=True,
-                 output_attentions=False,
                  output_hidden_states=False):
         super().__init__()
-        self.output_attentions = output_attentions
         self.output_hidden_states = output_hidden_states
         self.layer = nn.ModuleList([
             BertLayer(
@@ -448,8 +432,7 @@ class BertEncoder(nn.Module):
                 attention_half_width=attention_half_width,
                 attention_type=attention_type,
                 layer_norm_eps=layer_norm_eps,
-                self_attention_bias=self_attention_bias,
-                output_attentions=output_attentions)
+                self_attention_bias=self_attention_bias)
             for _ in range(num_hidden_layers)])
         self.num_hidden_layers = num_hidden_layers
 
@@ -462,8 +445,6 @@ class BertEncoder(nn.Module):
         n_layer=None,
     ):
         all_hidden_states = []
-        all_self_attentions = []
-        all_cross_attentions = []
 
         for n, layer_module in enumerate(self.layer):
 
@@ -476,12 +457,6 @@ class BertEncoder(nn.Module):
                                          encoder_attention_mask)
             hidden_states = layer_outputs[0]
 
-            if self.output_attentions:
-                if len(layer_outputs) > 1:
-                    all_self_attentions.extend(layer_outputs[1])
-                if len(layer_outputs) > 2:
-                    all_cross_attentions.extend(layer_outputs[2])
-
             if n_layer is not None and n + 1 >= n_layer:
                 break
 
@@ -489,23 +464,12 @@ class BertEncoder(nn.Module):
         if self.output_hidden_states:
             all_hidden_states.append(hidden_states)
 
-        outputs = [hidden_states, None, None, None]
-        if all_self_attentions:
-            all_self_attentions = [tensor.unsqueeze(dim=0)
-                                   for tensor in all_self_attentions]
-            all_self_attentions = torch.cat(all_self_attentions, dim=0)
-            outputs[1] = all_self_attentions
+        outputs = [hidden_states, None]
 
         if self.output_hidden_states:
             all_hidden_states = [tensor.unsqueeze(dim=0)
                                  for tensor in all_hidden_states]
             all_hidden_states = torch.cat(all_hidden_states, dim=0)
-            outputs[2] = all_hidden_states
-
-        if all_cross_attentions:
-            all_cross_attentions = [tensor.unsqueeze(dim=0)
-                                    for tensor in all_cross_attentions]
-            all_cross_attentions = torch.cat(all_cross_attentions, dim=0)
-            outputs[3] = all_cross_attentions
+            outputs[1] = all_hidden_states
 
         return outputs

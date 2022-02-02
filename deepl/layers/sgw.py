@@ -11,14 +11,13 @@ class LocalSelfAttention(BertSelfAttention):
             self,
             hidden_size,
             num_attention_heads,
-            half_width_key=7,
-            half_width_val=7,
+            half_width_key=5,
+            half_width_val=5,
             dropout_alpha=0.0,
             attention_head_size=None,
-            attention_half_width=7,
+            attention_half_width=5,
             attention_type=AttentionType.BIDIRECTIONAL,
-            self_attention_bias=False,
-            output_attentions=False
+            self_attention_bias=False
     ):
         super().__init__(
             hidden_size=hidden_size,
@@ -29,8 +28,7 @@ class LocalSelfAttention(BertSelfAttention):
             attention_head_size=attention_head_size,
             attention_half_width=attention_half_width,
             attention_type=attention_type,
-            self_attention_bias=self_attention_bias,
-            output_attentions=output_attentions
+            self_attention_bias=self_attention_bias
         )
         assert attention_half_width is not None, \
             '`attention_half_width` must be int'
@@ -66,12 +64,11 @@ class LocalSelfAttention(BertSelfAttention):
         return attention_probs
 
     def _local_score_matrix(self, query_layer, key_layer, attention_mask):
-        n = query_layer.shape[-2]
-        m = key_layer.shape[-2]
+        n = query_layer.shape[-2]  # allowed only for square matrix
         device = query_layer.device
         key_layer = key_layer.transpose(-1, -2)
 
-        w = 2 * self.half_width_val + 1
+        w = 2 * self.attention_half_width + 1
         key_layer_reordered = torch.zeros(
             key_layer.shape[:-1] + (n * w, ), device=device
         )
@@ -79,10 +76,10 @@ class LocalSelfAttention(BertSelfAttention):
             key_layer.shape[:-2] + (n * w, ), device=device, dtype=torch.bool
         )
 
-        ids_a_k = self._idx_val(n, m, self.attention_half_width, device)
-        ids_att = self._idx_key(n, m, self.attention_half_width, device)
+        ids_a_k = self._idx_val(n, n, self.attention_half_width, device)
+        ids_v_k = self._idx_key(n, n, self.attention_half_width, device)
 
-        key_layer_reordered[..., ids_a_k] = key_layer[..., ids_att]
+        key_layer_reordered[..., ids_a_k] = key_layer[..., ids_v_k]
         key_layer_reordered = key_layer_reordered.view(key_layer_reordered.shape[:-1] + (n, w))
         key_layer_reordered = key_layer_reordered.transpose(-2, -3)
         attention_scores = torch.sum(
@@ -90,7 +87,7 @@ class LocalSelfAttention(BertSelfAttention):
         )
 
         if attention_mask is not None:
-            extended_attention_mask[..., ids_a_k] = attention_mask[:, None, ids_att].to(torch.bool)
+            extended_attention_mask[..., ids_a_k] = attention_mask[:, None, ids_v_k].to(torch.bool)
         else:
             extended_attention_mask[..., ids_a_k] = True
         extended_attention_mask = extended_attention_mask.view(extended_attention_mask.shape[:-1] + (n, w))
@@ -122,11 +119,12 @@ class LocalSelfAttention(BertSelfAttention):
         return context_layer
 
     def _local_context_layer(self, attention_probs, value_layer):
-        n, m = attention_probs.shape[-2:]
+        n = attention_probs.shape[-2]
+        m = value_layer.shape[-2]
         device = value_layer.device
         value_layer = value_layer.transpose(-1, -2)
 
-        w = 2 * self.half_width_val + 1
+        w = 2 * self.attention_half_width + 1
         value_layer_reordered = torch.zeros(
             value_layer.shape[:-1] + (n * w, ), device=device
         )

@@ -14,15 +14,13 @@ class BertSelfAttentionNaiveImpl(nn.Module):
                  num_attention_heads,
                  half_width_key,
                  half_width_val,
-                 dropout_prob=0.0,
-                 output_attentions=False):
+                 dropout_prob=0.0):
         super().__init__()
         if hidden_size % num_attention_heads != 0:
             raise ValueError(
                 "The hidden size (%d) is not a multiple of the number of attention "
                 "heads (%d)" % (hidden_size, num_attention_heads)
             )
-        self.output_attentions = output_attentions
 
         self.num_attention_heads = num_attention_heads
         self.attention_head_size = int(hidden_size / num_attention_heads)
@@ -42,13 +40,11 @@ class BertSelfAttentionNaiveImpl(nn.Module):
         self.relative_pos_val = nn.Embedding(2 * self.half_width_val + 1,
                                              self.attention_head_size)
 
-    def forward(self, hidden_states, attention_mask=None, head_mask=None):
+    def forward(self, hidden_states, attention_mask=None):
         query_layer, key_layer, value_layer = self.get_query_key_value(hidden_states)
         attention_probs = self.get_attention_probs(query_layer, key_layer, attention_mask)
         context_layer = self.get_context_layer(attention_probs, value_layer)
-        outputs = (context_layer, attention_probs) if self.output_attentions \
-            else (context_layer,)
-        return outputs
+        return context_layer
 
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
@@ -126,13 +122,12 @@ def naive_test_obj():
     head_number = 2
     hidden_size = head_size * head_number
     half_width_key = 2
-    half_width_value = 1
+    half_width_value = 5
     params = {
         'hidden_size': hidden_size,
         'num_attention_heads': head_number,
         'half_width_key': half_width_key,
-        'half_width_val': half_width_value,
-        'output_attentions': False
+        'half_width_val': half_width_value
     }
     obj_test = BertSelfAttention(**params)
     obj_naive = BertSelfAttentionNaiveImpl(**params)
@@ -148,12 +143,14 @@ def naive_test_obj():
 def get_input_data(hidden_size):
     batch_size = 2
     sequence_length = 5
-    return torch.rand((batch_size, sequence_length, hidden_size))
+    h = torch.rand((batch_size, sequence_length, hidden_size))
+    m = torch.ones((batch_size, sequence_length))
+    return h, m
 
 
 def test_query_values():
     obj_naive, obj_test, hidden_size = naive_test_obj()
-    input_data = get_input_data(hidden_size)
+    input_data, m = get_input_data(hidden_size)
     q_naive, k_naive, v_naive = obj_naive.get_query_key_value(input_data)
     q_test, k_test, v_test, a_test = obj_test.get_query_key_value(input_data, None, None, None)
     dv = q_naive - q_test
@@ -162,7 +159,7 @@ def test_query_values():
 
 def test_position_key_score():
     obj_naive, obj_test, hidden_size = naive_test_obj()
-    input_data = get_input_data(hidden_size)
+    input_data, m = get_input_data(hidden_size)
     q_naive, k_naive, v_naive = obj_naive.get_query_key_value(input_data)
     q_test, k_test, v_test, a_test = obj_test.get_query_key_value(input_data, None, None, None)
     att_pos_naive = obj_naive.get_key_position_score(q_naive)
@@ -173,7 +170,7 @@ def test_position_key_score():
 
 def test_attention_proba():
     obj_naive, obj_test, hidden_size = naive_test_obj()
-    input_data = get_input_data(hidden_size)
+    input_data, m = get_input_data(hidden_size)
     q_naive, k_naive, v_naive = obj_naive.get_query_key_value(input_data)
     q_test, k_test, v_test, a_test = obj_test.get_query_key_value(input_data, None, None, None)
     att_prob_naive = obj_naive.get_attention_probs(q_naive, k_naive, None)
@@ -184,9 +181,9 @@ def test_attention_proba():
 
 def test_position_value_score():
     obj_naive, obj_test, hidden_size = naive_test_obj()
-    input_data = get_input_data(hidden_size)
-    q_naive, k_naive, v_naive = obj_naive.get_query_key_value(input_data)
-    q_test, k_test, v_test, a_test = obj_test.get_query_key_value(input_data, None, None, None)
+    h, m = get_input_data(hidden_size)
+    q_naive, k_naive, v_naive = obj_naive.get_query_key_value(h)
+    q_test, k_test, v_test, a_test = obj_test.get_query_key_value(h, None, None, None)
     att_prob_naive = obj_naive.get_attention_probs(q_naive, k_naive, None)
     att_prob_test = obj_test.get_attention_probs(q_test, k_test, None)
 
@@ -196,9 +193,19 @@ def test_position_value_score():
     assert torch.max(torch.abs(dv)) < MAX_FLOAT32_ERROR
 
 
+def test_self_attention():
+    obj_naive, obj_test, hidden_size = naive_test_obj()
+    h, m = get_input_data(hidden_size)
+    output_naive = obj_naive(h, m)
+    output_test = obj_test(h, m)
+    dv = output_naive - output_test
+    assert torch.max(torch.abs(dv)) < MAX_FLOAT32_ERROR
+
+
 if __name__ == '__main__':
     for _ in tqdm(range(100)):
         test_query_values()
         test_position_key_score()
         test_attention_proba()
         test_position_value_score()
+        test_self_attention()
