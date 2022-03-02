@@ -6,6 +6,8 @@ from ..layers.headers import get_head_by_config
 
 
 class SGWLanguageModel(ModelBase):
+    config_cls = SGWLanguageModelConfig
+
     def __init__(self, config: SGWLanguageModelConfig):
         super().__init__(config)
         self.embedding = Embeddings(
