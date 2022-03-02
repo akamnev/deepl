@@ -4,32 +4,31 @@ from enum import IntEnum, auto
 import torch
 
 
-class IntEnumBase(IntEnum):
-    @classmethod
-    def from_name(cls, name):
-        try:
-            return cls.__members__[name]
-        except KeyError:
-            cls._missing_(name)
-
-
-class PSS(IntEnumBase):
+class PSS(IntEnum):
     """Parameter Sharing Strategy"""
     NO_PARAMETERS_SHARING = auto()
     ALL_PARAMETERS_SHARING = auto()
 
 
-class VPP(IntEnumBase):
+class VPP(IntEnum):
     """Vector Place Position"""
     FIRST = auto()
     INSIDE = auto()
     LAST = auto()
 
 
-class AttentionType(IntEnumBase):
+class AttentionType(IntEnum):
     """Attention decoder type"""
     BIDIRECTIONAL = auto()
     AUTOREGRESSION = auto()
+
+
+class GatingKind(IntEnum):
+    NONE = auto()
+    GRU = auto()
+    MinGRU = auto()
+    GRUs = auto()
+    MinGRUs = auto()
 
 
 def set_config_attrib(obj, name, value):
@@ -124,11 +123,11 @@ class EncoderConfig(ConfigBase):
         if isinstance(self.device, str):
             self.device = torch.device(self.device)
         if not isinstance(self.attention_type, AttentionType):
-            self.attention_type = AttentionType.from_name(self.attention_type)
+            self.attention_type = AttentionType[self.attention_type]
 
     def to_dict(self):
         output = super().to_dict()
-        output['attention_type'] = self.attention_type.name
+        output['attention_type'] = str(self.attention_type.name)
         return output
 
 
@@ -180,10 +179,12 @@ class HeadConfigBase(ConfigBase):
 
 
 class LanguageHeadConfig(HeadConfigBase):
-    def __init__(self,
-                 hidden_size,
-                 hidden_act,
-                 vocab_size):
+    def __init__(
+            self,
+            hidden_size,
+            hidden_act,
+            vocab_size
+    ):
         self.hidden_size = hidden_size
         self.hidden_act = hidden_act
         self.vocab_size = vocab_size
@@ -252,6 +253,101 @@ class LanguageModelConfig(ConfigBase):
             raise ValueError(encoder)
 
         self.heads = {}
+        heads = heads if heads is not None else dict()
+        for name, head in heads.items():
+            if isinstance(head, dict):
+                for cls in (LanguageHeadConfig,
+                            LanguageHeadLNConfig,
+                            LinRegHeadConfig,
+                            VectorMeanHeadConfig,
+                            VectorMeanLNHeadConfig,
+                            VectorMaxHeadConfig):
+                    if head['class_name'] == cls.__name__:
+                        head = cls.from_dict(head)
+                        break
+            if not isinstance(head, (LanguageHeadConfig,
+                                     LanguageHeadLNConfig,
+                                     LinRegHeadConfig,
+                                     VectorMeanHeadConfig,
+                                     VectorMeanLNHeadConfig,
+                                     VectorMaxHeadConfig)):
+                raise ValueError(head)
+            self.heads[name] = head
+
+    def to_dict(self):
+        outputs = {
+            'embeddings': self.embeddings.to_dict(),
+            'encoder': self.encoder.to_dict(),
+            'heads': {k: h.to_dict() for k, h in self.heads.items()}
+        }
+        return outputs
+
+
+class SGWEmbeddingsConfig(ConfigBase):
+    def __init__(
+            self,
+            workspace_size,
+            vocab_size,
+            hidden_size
+    ):
+        self.workspace_size = workspace_size
+        self.vocab_size = vocab_size
+        self.hidden_size = hidden_size
+
+
+class SGWEncoderConfig(ConfigBase):
+    def __init__(
+            self,
+            num_hidden_layers,
+            hidden_size,
+            num_attention_heads,
+            intermediate_size,
+            attention_half_width,
+            hidden_act='ReLU',
+            gating=GatingKind.NONE,
+            layer_norm_eps=1e-8
+    ):
+        self.num_hidden_layers = num_hidden_layers
+        self.hidden_size = hidden_size
+        self.num_attention_heads = num_attention_heads
+        self.intermediate_size = intermediate_size
+        self.attention_half_width = attention_half_width
+        self.hidden_act = hidden_act
+        self.gating = gating
+        self.layer_norm_eps = layer_norm_eps
+
+        if not isinstance(self.gating, GatingKind):
+            self.gating = GatingKind[self.gating]
+
+    def to_dict(self):
+        output = super().to_dict()
+        output['gating'] = str(self.gating.name)
+        return output
+
+
+class SGWLanguageModelConfig(ConfigBase):
+    def __init__(
+            self,
+            embeddings,
+            encoder,
+            heads=None
+    ):
+
+        if isinstance(embeddings, dict):
+            embeddings = SGWEmbeddingsConfig.from_dict(embeddings)
+        self.embeddings = embeddings
+        if not isinstance(self.embeddings, SGWEmbeddingsConfig):
+            raise ValueError(self.embeddings)
+
+        if isinstance(encoder, dict):
+            encoder = SGWEncoderConfig.from_dict(encoder)
+        if isinstance(encoder, SGWEncoderConfig):
+            self.encoder = encoder
+        else:
+            raise ValueError(encoder)
+
+        self.heads = {}
+        heads = heads if heads is not None else dict()
         for name, head in heads.items():
             if isinstance(head, dict):
                 for cls in (LanguageHeadConfig,

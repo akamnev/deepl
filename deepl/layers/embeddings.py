@@ -25,9 +25,6 @@ class WordEmbeddingsBase(nn.Module):
                                             hidden_size,
                                             padding_idx=padding_idx)
         self.max_position = max_position
-        self.word_embeddings = nn.Embedding(vocab_size,
-                                            hidden_size,
-                                            padding_idx=padding_idx)
         if max_position > 0:
             self.position_embeddings = nn.Embedding(max_position + 1,
                                                     hidden_size,
