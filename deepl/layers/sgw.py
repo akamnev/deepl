@@ -427,7 +427,16 @@ class EncoderLayer(nn.Module):
             layer_norm_eps=1e-8
     ):
         super().__init__()
-        self.layer_norm = nn.LayerNorm(
+        self.layer_norm_local_self_attention = nn.LayerNorm(
+            hidden_size, eps=layer_norm_eps
+        )
+        self.layer_norm_global_attention = nn.LayerNorm(
+            hidden_size, eps=layer_norm_eps
+        )
+        self.layer_norm_workspace = nn.LayerNorm(
+            hidden_size, eps=layer_norm_eps
+        )
+        self.layer_norm_feedforward = nn.LayerNorm(
             hidden_size, eps=layer_norm_eps
         )
         self.local_self_attention = LocalSelfAttention(
@@ -455,6 +464,9 @@ class EncoderLayer(nn.Module):
             position_index=position_index
         )
         hidden_states = hidden_states + attention_output
+        hidden_states = self.layer_norm_local_self_attention(
+            hidden_states
+        )
 
         shared_work_space_output = self.shared_work_space_unit(
             workspace_states=workspace_states,
@@ -464,13 +476,20 @@ class EncoderLayer(nn.Module):
         workspace_states = shared_work_space_output[0]
         hidden_states = hidden_states + shared_work_space_output[1]
 
+        workspace_states = self.layer_norm_workspace(
+            workspace_states
+        )
+        hidden_states = self.layer_norm_global_attention(
+            hidden_states
+        )
+
         feedforward_output = self.feedforward(
             hidden_states=hidden_states,
             attention_mask=attention_mask
         )
         hidden_states = hidden_states + feedforward_output
 
-        hidden_states = self.layer_norm(hidden_states)
+        hidden_states = self.layer_norm_feedforward(hidden_states)
 
         return workspace_states, hidden_states
 
