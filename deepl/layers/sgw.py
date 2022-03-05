@@ -298,7 +298,8 @@ class SharedWorkSpace(nn.Module):
             hidden_size,
             num_attention_heads,
             gating,
-            max_position=None
+            max_position=None,
+            layer_norm_eps=1e-8
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -351,6 +352,9 @@ class SharedWorkSpace(nn.Module):
                 self.attention_head_size
             )
             self.position_key = nn.Parameter(torch.Tensor(*position_shape))
+        self.layer_norm_workspace = nn.LayerNorm(
+            hidden_size, eps=layer_norm_eps
+        )
 
     def transpose_for_scores(self, x):
         new_x_shape = (
@@ -384,6 +388,7 @@ class SharedWorkSpace(nn.Module):
             update=context_ws,
             hidden=workspace_states
         )
+        workspace_states = self.layer_norm_workspace(workspace_states)
         # update hidden states
         query_hs = self.transpose_for_scores(self.query_m2h(hidden_states))
         key_ws = self.transpose_for_scores(self.key_m2h(workspace_states))
@@ -433,9 +438,6 @@ class EncoderLayer(nn.Module):
         self.layer_norm_global_attention = nn.LayerNorm(
             hidden_size, eps=layer_norm_eps
         )
-        self.layer_norm_workspace = nn.LayerNorm(
-            hidden_size, eps=layer_norm_eps
-        )
         self.layer_norm_feedforward = nn.LayerNorm(
             hidden_size, eps=layer_norm_eps
         )
@@ -464,9 +466,7 @@ class EncoderLayer(nn.Module):
             position_index=position_index
         )
         hidden_states = hidden_states + attention_output
-        hidden_states = self.layer_norm_local_self_attention(
-            hidden_states
-        )
+        hidden_states = self.layer_norm_local_self_attention(hidden_states)
 
         shared_work_space_output = self.shared_work_space_unit(
             workspace_states=workspace_states,
@@ -476,12 +476,7 @@ class EncoderLayer(nn.Module):
         workspace_states = shared_work_space_output[0]
         hidden_states = hidden_states + shared_work_space_output[1]
 
-        workspace_states = self.layer_norm_workspace(
-            workspace_states
-        )
-        hidden_states = self.layer_norm_global_attention(
-            hidden_states
-        )
+        hidden_states = self.layer_norm_global_attention(hidden_states)
 
         feedforward_output = self.feedforward(
             hidden_states=hidden_states,

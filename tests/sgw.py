@@ -214,7 +214,7 @@ def test_language_model(input_ids):
         num_attention_heads=head_number,
         intermediate_size=4 * hidden_size,
         attention_half_width=hw,
-        hidden_act='ReLU',
+        hidden_act='leakyReLU',
         gating=gating,
         layer_norm_eps=1e-8
     )
