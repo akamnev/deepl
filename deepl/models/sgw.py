@@ -35,7 +35,7 @@ class SGWLanguageModel(ModelBase):
             attention_mask,
             **kwargs
     ):
-        workspace, embedding = self.embedding(input_ids)
+        workspace, embedding = self.embedding(input_ids, attention_mask)
         outputs = self.encoder(
             workspace_states=workspace,
             hidden_states=embedding,

@@ -139,7 +139,7 @@ class LocalSelfAttention(nn.Module):
             query, key, value, attention_mask, index=position_index
         )
         context = self.transpose_context(context)
-        context = self.dropout(context)
+        context = self.dropout(context, attention_mask)
         output = self.output_layer(context)
 
         if self.training:
@@ -316,6 +316,10 @@ class SharedWorkSpace(nn.Module):
         self.value_h2m = nn.Linear(
             hidden_size, self.all_head_size, bias=False
         )
+        self.dropout_h2m = VariationalNormalEpanechnikovDropout(
+            input_size=self.all_head_size
+        )
+        self.output_layer_h2m = nn.Linear(self.all_head_size, hidden_size)
 
         self.query_m2h = nn.Linear(
             hidden_size, self.all_head_size, bias=False
@@ -326,6 +330,10 @@ class SharedWorkSpace(nn.Module):
         self.value_m2h = nn.Linear(
             hidden_size, self.all_head_size, bias=False
         )
+        self.dropout_m2h = VariationalNormalEpanechnikovDropout(
+            input_size=self.all_head_size
+        )
+        self.output_layer_m2h = nn.Linear(self.all_head_size, hidden_size)
 
         self.softmax = nn.Softmax(dim=-1)
 
@@ -383,9 +391,12 @@ class SharedWorkSpace(nn.Module):
             query_ws, key_hs, value_hs, attention_mask
         )
         context_ws = self.transpose_context(context_ws)
+        context_ws = self.dropout_h2m(context_ws)
+        output_ws = self.output_layer_h2m(context_ws)
+
         # gating
         workspace_states = self.gating(
-            update=context_ws,
+            update=output_ws,
             hidden=workspace_states
         )
         workspace_states = self.layer_norm_workspace(workspace_states)
@@ -398,8 +409,10 @@ class SharedWorkSpace(nn.Module):
             query_hs, key_ws, value_ws
         )
         context_hs = self.transpose_context(context_hs)
+        context_hs = self.dropout_m2h(context_hs, attention_mask)
+        output_hs = self.output_layer_m2h(context_hs)
 
-        return workspace_states, context_hs
+        return workspace_states, output_hs
 
     def transpose_context(self, context):
         context = context.permute(0, 2, 1, 3)
@@ -589,12 +602,12 @@ class Embeddings(nn.Module):
         self.dropout_ws = VariationalNormalEpanechnikovDropout(hidden_size)
         self.dropout_emb = VariationalNormalEpanechnikovDropout(hidden_size)
 
-    def forward(self, input_ids):
+    def forward(self, input_ids, attention_mask):
         bs = input_ids.shape[0]
         workspace = self.init_workspace.repeat([bs, 1, 1])
         embeddings = self.word_embeddings(input_ids)
 
         workspace = self.dropout_ws(workspace)
-        embeddings = self.dropout_emb(embeddings)
+        embeddings = self.dropout_emb(embeddings, attention_mask)
 
         return workspace, embeddings
