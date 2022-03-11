@@ -118,7 +118,7 @@ class LocalSelfAttention(nn.Module):
             self._proba_tensor = proba
             self._extended_attention_mask_tensor = extended_mask
 
-        return context
+        return context, proba
 
     def forward(
         self,
@@ -135,7 +135,7 @@ class LocalSelfAttention(nn.Module):
         query = self.transpose_for_scores(self.query_projection(hidden_states))
         key = self.transpose_for_scores(self.key_projection(hidden_states))
         value = self.transpose_for_scores(self.value_projection(hidden_states))
-        context = self._multi_head_attention(
+        context, proba = self._multi_head_attention(
             query, key, value, attention_mask, index=position_index
         )
         context = self.transpose_context(context)
@@ -144,7 +144,7 @@ class LocalSelfAttention(nn.Module):
 
         if self.training:
             self._value_tensor = value
-        return output
+        return output, proba
 
     def loss_value_unity(self):
         # TODO: check
@@ -387,7 +387,7 @@ class SharedWorkSpace(nn.Module):
             t = key_hs.shape[-2]
             key_hs = key_hs + self.position_key[..., :t, :]
 
-        context_ws = self._multi_head_attention(
+        context_ws, proba_h2m = self._multi_head_attention(
             query_ws, key_hs, value_hs, attention_mask
         )
         context_ws = self.transpose_context(context_ws)
@@ -405,14 +405,14 @@ class SharedWorkSpace(nn.Module):
         key_ws = self.transpose_for_scores(self.key_m2h(workspace_states))
         value_ws = self.transpose_for_scores(self.value_m2h(workspace_states))
 
-        context_hs = self._multi_head_attention(
+        context_hs, proba_m2h = self._multi_head_attention(
             query_hs, key_ws, value_ws
         )
         context_hs = self.transpose_context(context_hs)
         context_hs = self.dropout_m2h(context_hs, attention_mask)
         output_hs = self.output_layer_m2h(context_hs)
 
-        return workspace_states, output_hs
+        return workspace_states, output_hs, (proba_h2m, proba_m2h)
 
     def transpose_context(self, context):
         context = context.permute(0, 2, 1, 3)
@@ -430,7 +430,7 @@ class SharedWorkSpace(nn.Module):
         proba = self.softmax(score)
         context = torch.matmul(proba, value)
 
-        return context
+        return context, proba
 
 
 class EncoderLayer(nn.Module):
@@ -473,7 +473,7 @@ class EncoderLayer(nn.Module):
         attention_mask,
         position_index=None
     ):
-        attention_output = self.local_self_attention(
+        attention_output, proba_lsa = self.local_self_attention(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
             position_index=position_index
@@ -488,6 +488,7 @@ class EncoderLayer(nn.Module):
         )
         workspace_states = shared_work_space_output[0]
         hidden_states = hidden_states + shared_work_space_output[1]
+        proba_ws_h2m, proba_ws_m2h = shared_work_space_output[2]
 
         hidden_states = self.layer_norm_global_attention(hidden_states)
 
@@ -499,7 +500,8 @@ class EncoderLayer(nn.Module):
 
         hidden_states = self.layer_norm_feedforward(hidden_states)
 
-        return workspace_states, hidden_states
+        return workspace_states, hidden_states, \
+               (proba_lsa, proba_ws_h2m, proba_ws_m2h)
 
 
 class Encoder(nn.Module):
@@ -539,10 +541,14 @@ class Encoder(nn.Module):
         hidden_states,
         attention_mask,
         n_layer=None,
-        output_hidden_states=False
+        output_hidden_states=False,
+        output_proba=False
     ):
         all_hidden_states = []
         all_workspace_states = []
+        all_proba_lsa = []
+        all_proba_ws_h2m = []
+        all_proba_ws_m2h = []
         if attention_mask.dtype != torch.bool:
             attention_mask = attention_mask.to(dtype=torch.bool)
 
@@ -558,6 +564,10 @@ class Encoder(nn.Module):
             )
             workspace_states = layer_outputs[0]
             hidden_states = layer_outputs[1]
+            if output_proba:
+                all_proba_lsa.append(layer_outputs[2][0])
+                all_proba_ws_h2m.append(layer_outputs[2][1])
+                all_proba_ws_m2h.append(layer_outputs[2][2])
 
             if n_layer is not None and n + 1 >= n_layer:
                 break
@@ -567,18 +577,17 @@ class Encoder(nn.Module):
             all_workspace_states.append(workspace_states)
             all_hidden_states.append(hidden_states)
 
-        outputs = [workspace_states, hidden_states, None, None]
+        outputs = [
+            workspace_states, hidden_states, None, None, None, None, None
+        ]
 
         if output_hidden_states:
-            all_workspace_states = [tensor.unsqueeze(dim=0)
-                                    for tensor in all_workspace_states]
-            all_workspace_states = torch.cat(all_workspace_states, dim=0)
             outputs[2] = all_workspace_states
-
-            all_hidden_states = [tensor.unsqueeze(dim=0)
-                                 for tensor in all_hidden_states]
-            all_hidden_states = torch.cat(all_hidden_states, dim=0)
             outputs[3] = all_hidden_states
+        if output_proba:
+            outputs[4] = all_proba_lsa
+            outputs[5] = all_proba_ws_h2m
+            outputs[6] = all_proba_ws_m2h
 
         return outputs
 

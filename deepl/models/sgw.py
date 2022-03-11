@@ -41,13 +41,17 @@ class SGWLanguageModel(ModelBase):
             hidden_states=embedding,
             attention_mask=attention_mask,
             n_layer=kwargs.get('n_layer', None),
-            output_hidden_states=kwargs.get('output_hidden_states', False)
+            output_hidden_states=kwargs.get('output_hidden_states', False),
+            output_proba=kwargs.get('output_proba', False),
         )
         outputs = {
             'workspace': outputs[0],
             'embedding': outputs[1],
             'all_workspace_states': outputs[2],
             'all_hidden_states': outputs[3],
+            'all_proba_lsa': outputs[4],
+            'all_proba_ws_h2m': outputs[5],
+            'all_proba_ws_m2h': outputs[6],
         }
         exclude_heads = kwargs.get('exclude_heads', set())
         for name, head in self.heads.items():
