@@ -514,6 +514,7 @@ class Encoder(nn.Module):
             attention_half_width,
             hidden_act='ReLU',
             gating=GatingKind.NONE,
+            max_position=None,
             layer_norm_eps=1e-8
     ):
         super().__init__()
@@ -521,7 +522,8 @@ class Encoder(nn.Module):
         shared_work_space_unit = SharedWorkSpace(
             hidden_size=hidden_size,
             num_attention_heads=num_attention_heads,
-            gating=gating
+            gating=gating,
+            max_position=max_position
         )
         self.layer = nn.ModuleList([
             EncoderLayer(

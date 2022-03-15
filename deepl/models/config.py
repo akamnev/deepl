@@ -305,6 +305,7 @@ class SGWEncoderConfig(ConfigBase):
             attention_half_width,
             hidden_act='ReLU',
             gating=GatingKind.NONE,
+            max_position=None,
             layer_norm_eps=1e-8
     ):
         self.num_hidden_layers = num_hidden_layers
@@ -314,6 +315,7 @@ class SGWEncoderConfig(ConfigBase):
         self.attention_half_width = attention_half_width
         self.hidden_act = hidden_act
         self.gating = gating
+        self.max_position = max_position
         self.layer_norm_eps = layer_norm_eps
 
         if not isinstance(self.gating, GatingKind):
