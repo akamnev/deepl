@@ -43,6 +43,7 @@ class SGWLanguageModel(ModelBase):
             n_layer=kwargs.get('n_layer', None),
             output_hidden_states=kwargs.get('output_hidden_states', False),
             output_proba=kwargs.get('output_proba', False),
+            output_regularisation=kwargs.get('output_regularisation', False),
         )
         outputs = {
             'workspace': outputs[0],
@@ -52,6 +53,8 @@ class SGWLanguageModel(ModelBase):
             'all_proba_lsa': outputs[4],
             'all_proba_ws_h2m': outputs[5],
             'all_proba_ws_m2h': outputs[6],
+            'all_reg_h2m_sigma_arg': outputs[7],
+            'all_reg_h2m_diff_norm': outputs[8]
         }
         exclude_heads = kwargs.get('exclude_heads', set())
         for name, head in self.heads.items():

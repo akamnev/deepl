@@ -25,10 +25,8 @@ class AttentionType(IntEnum):
 
 class GatingKind(IntEnum):
     NONE = auto()
-    GRU = auto()
-    MinGRU = auto()
-    GRUs = auto()
-    MinGRUs = auto()
+    VectorGating = auto()
+    ScalaGating = auto()
 
 
 def set_config_attrib(obj, name, value):

@@ -1,6 +1,5 @@
 import pytest
 import random
-import time
 import torch
 from deepl.layers.sgw import LocalSelfAttention, SharedWorkSpace, \
     EncoderLayer, Encoder, Embeddings
@@ -122,7 +121,11 @@ def test_local_self_attention(input_tensors):
         hidden_states=h,
         attention_mask=m
     )
+    reg_1 = obj.loss_value_unity()
+    reg_2 = obj.loss_attention_entropy()
     print(output)
+    print(reg_1)
+    print(reg_2)
 
 
 def test_workspace(input_tensors):
@@ -130,7 +133,7 @@ def test_workspace(input_tensors):
     obj = SharedWorkSpace(
         hidden_size=hidden_size,
         num_attention_heads=head_number,
-        gating=GatingKind.MinGRUs,
+        gating=GatingKind.ScalaGating,
         max_position=None
     )
     m = torch.as_tensor(m, dtype=torch.bool)
@@ -148,7 +151,7 @@ def test_encoder_layer(input_tensors):
     swsu = SharedWorkSpace(
         hidden_size=hidden_size,
         num_attention_heads=head_number,
-        gating=GatingKind.MinGRUs
+        gating=GatingKind.ScalaGating
     )
 
     obj = EncoderLayer(
@@ -178,12 +181,16 @@ def test_encoder(input_tensors):
         intermediate_size=4*hidden_size,
         attention_half_width=hw,
         hidden_act='ReLU',
+        gating=GatingKind.ScalaGating
     )
 
     output = obj(
         workspace_states=ws,
         hidden_states=h,
-        attention_mask=m
+        attention_mask=m,
+        output_hidden_states=True,
+        output_proba=True,
+        output_regularisation=True
     )
     print(output)
 

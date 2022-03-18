@@ -62,7 +62,6 @@ class LocalSelfAttention(nn.Module):
         self._score_tensor = None
         self._proba_tensor = None
         self._attention_mask_tensor = None
-        self._extended_attention_mask_tensor = None
 
     def transpose_for_scores(self, x):
         new_x_shape = (
@@ -116,7 +115,6 @@ class LocalSelfAttention(nn.Module):
         if self.training:
             self._score_tensor = score
             self._proba_tensor = proba
-            self._extended_attention_mask_tensor = extended_mask
 
         return context, proba
 
@@ -147,27 +145,24 @@ class LocalSelfAttention(nn.Module):
         return output, proba
 
     def loss_value_unity(self):
-        # TODO: check
         mask = self._attention_mask_tensor
         value = self._value_tensor
-        value = value * mask[:, None, :, None]
-        loss = (1.0 - torch.norm(value, dim=-1)) ** 2
+        reg = torch.norm(value, dim=-1)
+        loss = (1.0 - reg) ** 2
+        loss = loss * mask[:, None, :]
         norm = value.shape[1] * torch.sum(mask)
         loss = torch.sum(loss)
         loss = loss / norm
         return loss
 
     def loss_attention_entropy(self):
-        # TODO: check
         s = self._score_tensor - torch.logsumexp(self._score_tensor, dim=-1, keepdim=True)
         p = self._proba_tensor
-        mask_output = self._attention_mask_tensor
-        mask_input = self._extended_attention_mask_tensor
-        mask = mask_output[:, None, :, None] * mask_input
-        p = p * mask
-        s = s * mask
-        norm = torch.sum(mask[:, 0, :, 0]) * self.num_attention_heads
-        loss = torch.sum(p * s) / norm
+        mask = self._attention_mask_tensor
+        mask = mask[:, None, :, None] * mask[:, None, None, :]
+        loss = p * s * mask
+        norm = torch.sum(self._attention_mask_tensor) * self.num_attention_heads
+        loss = torch.sum(loss) / norm
         return loss
 
 
@@ -194,20 +189,30 @@ class FeedForward(nn.Module):
         return output_states
 
 
-def no_gating(update, hidden):
-    return update + hidden
+class NoGating(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(
+            self,
+            update,
+            hidden
+    ):
+        reg = None
+        if self.training:
+            h = torch.norm(hidden, dim=-1)
+            u = torch.norm(update, dim=-1)
+            reg = (None, h - u)
+
+        return update + hidden, reg
 
 
-class GRU(nn.Module):
+class VectorGating(nn.Module):
     def __init__(
             self,
             hidden_size
     ):
         super().__init__()
-        self.wz = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.uz = nn.Linear(hidden_size, hidden_size, bias=True)
-        self.wr = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.ur = nn.Linear(hidden_size, hidden_size, bias=True)
         self.wh = nn.Linear(hidden_size, hidden_size, bias=False)
         self.uh = nn.Linear(hidden_size, hidden_size, bias=True)
 
@@ -216,80 +221,81 @@ class GRU(nn.Module):
             update,
             hidden
     ):
-        z = torch.sigmoid(self.wz(update) + self.uz(hidden))
-        r = torch.sigmoid(self.wr(update) + self.ur(hidden))
-        h = torch.tanh(self.wh(update) + self.uh(r * hidden))
-        hidden = (1.0 - z) * hidden + z * h
-        return hidden
+        f = torch.sigmoid(self.wh(hidden) + self.uh(update))
+        hidden = hidden + f * update
+
+        reg = None
+        if self.training:
+            reg = self.reg_sigma_argument(h=hidden, u=update)
+        return hidden, reg
+
+    def reg_sigma_argument(self, h, u):
+        """ Регуляризация:
+            1. Аргумент сигма функции должен быть порядка единице по модулю.
+            2. Модули скрытого состояний и обновления не должны сильно
+               различаться
+
+        Args:
+            h: вектор скрытых состояний
+            u: вектор внешней информации
+        """
+        wh = self.wh.weight
+        uh = self.uh.weight
+        b = self.uh.bias
+
+        h = torch.norm(h, dim=-1, keepdim=True)
+        u = torch.norm(u, dim=-1, keepdim=True)
+        wh = torch.norm(wh, dim=-1)
+        uh = torch.norm(uh, dim=-1)
+
+        reg_1 = wh * h + uh * u + torch.norm(b)
+        reg_2 = (h - u).squeeze()
+        return reg_1, reg_2
 
 
-class GRUs(nn.Module):
+class ScalaGating(nn.Module):
     def __init__(
             self,
             hidden_size
     ):
         super().__init__()
-        self.wz = nn.Linear(hidden_size, 1, bias=False)
-        self.uz = nn.Linear(hidden_size, 1, bias=True)
-        self.wr = nn.Linear(hidden_size, 1, bias=False)
-        self.ur = nn.Linear(hidden_size, 1, bias=True)
-        self.wh = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.uh = nn.Linear(hidden_size, hidden_size, bias=True)
+        self.wh = nn.Linear(hidden_size, 1, bias=False)
+        self.uh = nn.Linear(hidden_size, 1, bias=True)
 
     def forward(
             self,
             update,
             hidden
     ):
-        z = torch.sigmoid(self.wz(update) + self.uz(hidden))
-        r = torch.sigmoid(self.wr(update) + self.ur(hidden))
-        h = torch.tanh(self.wh(update) + r * self.uh(hidden))
-        hidden = (1.0 - z) * hidden + z * h
-        return hidden
+        f = torch.sigmoid(self.wh(hidden) + self.uh(update))
+        hidden = hidden + f * update
 
+        reg = None
+        if self.training:
+            reg = self.reg_sigma_argument(h=hidden, u=update)
+        return hidden, reg
 
-class MinGRU(nn.Module):
-    def __init__(
-            self,
-            hidden_size
-    ):
-        super().__init__()
-        self.wf = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.uf = nn.Linear(hidden_size, hidden_size, bias=True)
-        self.wh = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.uh = nn.Linear(hidden_size, hidden_size, bias=True)
+    def reg_sigma_argument(self, h, u):
+        """ Регуляризация:
+            1. Аргумент сигма функции должен быть порядка единице по модулю.
+            2. Модули скрытого состояний и обновления не должны сильно
+               различаться
 
-    def forward(
-            self,
-            update,
-            hidden
-    ):
-        f = torch.sigmoid(self.wf(update) + self.uf(hidden))
-        h = torch.tanh(self.wh(update) + self.uh(f * hidden))
-        hidden = (1.0 - f) * hidden + f * h
-        return hidden
+        Args:
+            h: вектор скрытых состояний
+            u: вектор внешней информации
+        """
+        wh = self.wh.weight
+        uh = self.uh.weight
+        b = self.uh.bias
 
-
-class MinGRUs(nn.Module):
-    def __init__(
-            self,
-            hidden_size
-    ):
-        super().__init__()
-        self.wf = nn.Linear(hidden_size, 1, bias=False)
-        self.uf = nn.Linear(hidden_size, 1, bias=True)
-        self.wh = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.uh = nn.Linear(hidden_size, hidden_size, bias=True)
-
-    def forward(
-            self,
-            update,
-            hidden
-    ):
-        f = torch.sigmoid(self.wf(update) + self.uf(hidden))
-        h = torch.tanh(self.wh(update) + f * self.uh(hidden))
-        hidden = (1.0 - f) * hidden + f * h
-        return hidden
+        h = torch.norm(h, dim=-1)
+        u = torch.norm(u, dim=-1)
+        wh = torch.norm(wh)
+        uh = torch.norm(uh)
+        reg_1 = wh * h + uh * u + torch.abs(b)
+        reg_2 = h - u
+        return reg_1, reg_2
 
 
 class SharedWorkSpace(nn.Module):
@@ -338,15 +344,11 @@ class SharedWorkSpace(nn.Module):
         self.softmax = nn.Softmax(dim=-1)
 
         if gating == GatingKind.NONE:
-            self.gating = no_gating
-        elif gating == GatingKind.GRU:
-            self.gating = GRU(hidden_size=hidden_size)
-        elif gating == GatingKind.MinGRU:
-            self.gating = MinGRU(hidden_size=hidden_size)
-        elif gating == GatingKind.GRUs:
-            self.gating = GRUs(hidden_size=hidden_size)
-        elif gating == GatingKind.MinGRUs:
-            self.gating = MinGRUs(hidden_size=hidden_size)
+            self.gating = NoGating()
+        elif gating == GatingKind.VectorGating:
+            self.gating = VectorGating(hidden_size=hidden_size)
+        elif gating == GatingKind.ScalaGating:
+            self.gating = ScalaGating(hidden_size=hidden_size)
         else:
             raise ValueError(
                 f'An unknown value `{gating}` of gating is specified '
@@ -395,7 +397,7 @@ class SharedWorkSpace(nn.Module):
         output_ws = self.output_layer_h2m(context_ws)
 
         # gating
-        workspace_states = self.gating(
+        workspace_states, reg_gating = self.gating(
             update=output_ws,
             hidden=workspace_states
         )
@@ -412,7 +414,7 @@ class SharedWorkSpace(nn.Module):
         context_hs = self.dropout_m2h(context_hs, attention_mask)
         output_hs = self.output_layer_m2h(context_hs)
 
-        return workspace_states, output_hs, (proba_h2m, proba_m2h)
+        return workspace_states, output_hs, (proba_h2m, proba_m2h), reg_gating
 
     def transpose_context(self, context):
         context = context.permute(0, 2, 1, 3)
@@ -487,8 +489,10 @@ class EncoderLayer(nn.Module):
             attention_mask=attention_mask
         )
         workspace_states = shared_work_space_output[0]
+        # TODO: add gating mechanism
         hidden_states = hidden_states + shared_work_space_output[1]
         proba_ws_h2m, proba_ws_m2h = shared_work_space_output[2]
+        reg_gating = shared_work_space_output[3]
 
         hidden_states = self.layer_norm_global_attention(hidden_states)
 
@@ -500,8 +504,9 @@ class EncoderLayer(nn.Module):
 
         hidden_states = self.layer_norm_feedforward(hidden_states)
 
+        regularisation = reg_gating
         return workspace_states, hidden_states, \
-               (proba_lsa, proba_ws_h2m, proba_ws_m2h)
+               (proba_lsa, proba_ws_h2m, proba_ws_m2h), regularisation
 
 
 class Encoder(nn.Module):
@@ -544,13 +549,16 @@ class Encoder(nn.Module):
         attention_mask,
         n_layer=None,
         output_hidden_states=False,
-        output_proba=False
+        output_proba=False,
+        output_regularisation=False
     ):
         all_hidden_states = []
         all_workspace_states = []
         all_proba_lsa = []
         all_proba_ws_h2m = []
         all_proba_ws_m2h = []
+        all_reg_h2m_sigma_arg = []
+        all_reg_h2m_diff_norm = []
         if attention_mask.dtype != torch.bool:
             attention_mask = attention_mask.to(dtype=torch.bool)
 
@@ -570,6 +578,9 @@ class Encoder(nn.Module):
                 all_proba_lsa.append(layer_outputs[2][0])
                 all_proba_ws_h2m.append(layer_outputs[2][1])
                 all_proba_ws_m2h.append(layer_outputs[2][2])
+            if output_regularisation:
+                all_reg_h2m_sigma_arg.append(layer_outputs[3][0])
+                all_reg_h2m_diff_norm.append(layer_outputs[3][1])
 
             if n_layer is not None and n + 1 >= n_layer:
                 break
@@ -580,7 +591,8 @@ class Encoder(nn.Module):
             all_hidden_states.append(hidden_states)
 
         outputs = [
-            workspace_states, hidden_states, None, None, None, None, None
+            workspace_states, hidden_states, None, None, None, None, None,
+            None, None
         ]
 
         if output_hidden_states:
@@ -590,6 +602,9 @@ class Encoder(nn.Module):
             outputs[4] = all_proba_lsa
             outputs[5] = all_proba_ws_h2m
             outputs[6] = all_proba_ws_m2h
+        if output_regularisation:
+            outputs[7] = all_reg_h2m_sigma_arg
+            outputs[8] = all_reg_h2m_diff_norm
 
         return outputs
 
