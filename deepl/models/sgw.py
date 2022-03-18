@@ -23,6 +23,7 @@ class SGWLanguageModel(ModelBase):
             attention_half_width=config.encoder.attention_half_width,
             hidden_act=config.encoder.hidden_act,
             gating=config.encoder.gating,
+            max_position=config.encoder.max_position,
             layer_norm_eps=config.encoder.layer_norm_eps
         )
         self.heads = torch.nn.ModuleDict(
