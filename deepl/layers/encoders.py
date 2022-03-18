@@ -212,8 +212,8 @@ class BertSelfAttention(nn.Module):
         else:
             mask = self._encoder_attention_mask_tensor
         value = self._value_tensor
-        value = value * mask[:, None, :, None]
         loss = (1.0 - torch.norm(value, dim=-1)) ** 2
+        loss = loss * mask[:, None, :]
         norm = value.shape[1] * torch.sum(mask)
         loss = torch.sum(loss)
         loss = loss / norm
