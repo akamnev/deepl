@@ -196,13 +196,14 @@ class NoGating(nn.Module):
     def forward(
             self,
             update,
-            hidden
+            hidden,
+            eps=1e-6
     ):
         reg = None
         if self.training:
             h = torch.norm(hidden, dim=-1)
             u = torch.norm(update, dim=-1)
-            reg = (None, h - u)
+            reg = (None, (h - u) / (torch.abs(h + u) + eps))
 
         return update + hidden, reg
 
@@ -229,7 +230,7 @@ class VectorGating(nn.Module):
             reg = self.reg_sigma_argument(h=hidden, u=update)
         return hidden, reg
 
-    def reg_sigma_argument(self, h, u):
+    def reg_sigma_argument(self, h, u, eps=1e-6):
         """ Регуляризация:
             1. Аргумент сигма функции должен быть порядка единице по модулю.
             2. Модули скрытого состояний и обновления не должны сильно
@@ -238,6 +239,7 @@ class VectorGating(nn.Module):
         Args:
             h: вектор скрытых состояний
             u: вектор внешней информации
+            eps: (float) регуляризация
         """
         wh = self.wh.weight
         uh = self.uh.weight
@@ -249,7 +251,7 @@ class VectorGating(nn.Module):
         uh = torch.norm(uh, dim=-1)
 
         reg_1 = wh * h + uh * u + torch.norm(b)
-        reg_2 = (h - u).squeeze()
+        reg_2 = ((h - u) / (torch.abs(h + u) + eps)).squeeze()
         return reg_1, reg_2
 
 
@@ -275,7 +277,7 @@ class ScalaGating(nn.Module):
             reg = self.reg_sigma_argument(h=hidden, u=update)
         return hidden, reg
 
-    def reg_sigma_argument(self, h, u):
+    def reg_sigma_argument(self, h, u, eps=1e-6):
         """ Регуляризация:
             1. Аргумент сигма функции должен быть порядка единице по модулю.
             2. Модули скрытого состояний и обновления не должны сильно
@@ -284,6 +286,7 @@ class ScalaGating(nn.Module):
         Args:
             h: вектор скрытых состояний
             u: вектор внешней информации
+            eps: (float) регуляризация
         """
         wh = self.wh.weight
         uh = self.uh.weight
@@ -294,7 +297,7 @@ class ScalaGating(nn.Module):
         wh = torch.norm(wh)
         uh = torch.norm(uh)
         reg_1 = wh * h + uh * u + torch.abs(b)
-        reg_2 = h - u
+        reg_2 = (h - u) / (torch.abs(h + u) + eps)
         return reg_1, reg_2
 
 
