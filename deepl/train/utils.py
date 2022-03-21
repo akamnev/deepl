@@ -1,3 +1,5 @@
+import torch.nn as nn
+
 
 def kld_loss(module, method_name, method_kwargs=None):
     if method_kwargs is None:
@@ -31,3 +33,12 @@ def reset_module_loss(module, method_name, value_name):
         setattr(module, value_name, None)
     for child in module.children():
         reset_module_loss(child, method_name, value_name)
+
+
+def collect_layer_norm_weights(module):
+    fval = []
+    if isinstance(module, nn.LayerNorm):
+        fval += [module.weight]
+    for child in module.children():
+        fval += collect_layer_norm_weights(child)
+    return fval
