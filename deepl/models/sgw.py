@@ -22,7 +22,8 @@ class SGWLanguageModel(ModelBase):
             intermediate_size=config.encoder.intermediate_size,
             attention_half_width=config.encoder.attention_half_width,
             hidden_act=config.encoder.hidden_act,
-            gating=config.encoder.gating,
+            gating_h2m=config.encoder.gating_h2m,
+            gating_m2h=config.encoder.gating_m2h,
             max_position=config.encoder.max_position,
             layer_norm_eps=config.encoder.layer_norm_eps
         )
@@ -36,7 +37,11 @@ class SGWLanguageModel(ModelBase):
             attention_mask,
             **kwargs
     ):
-        workspace, embedding = self.embedding(input_ids, attention_mask)
+        workspace, embedding = self.embedding(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            normalize_mask=kwargs.get('normalize_mask', None),
+        )
         outputs = self.encoder(
             workspace_states=workspace,
             hidden_states=embedding,
@@ -54,8 +59,11 @@ class SGWLanguageModel(ModelBase):
             'all_proba_lsa': outputs[4],
             'all_proba_ws_h2m': outputs[5],
             'all_proba_ws_m2h': outputs[6],
-            'all_reg_h2m_sigma_arg': outputs[7],
-            'all_reg_h2m_diff_norm': outputs[8]
+            'all_gating_h2m': outputs[7],
+            'all_gating_m2h': outputs[8],
+            'all_reg_sigma_arg': outputs[9],
+            'all_reg_diff_norm': outputs[10],
+            'all_sgw_value_unity': outputs[11]
         }
         exclude_heads = kwargs.get('exclude_heads', set())
         for name, head in self.heads.items():

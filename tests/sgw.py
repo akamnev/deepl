@@ -161,6 +161,7 @@ def test_encoder_layer(input_tensors):
         attention_half_width=hw,
         hidden_act='ReLU',
         shared_work_space_unit=swsu,
+        gating=GatingKind.ScalaGating,
     )
 
     output = obj(
@@ -181,7 +182,8 @@ def test_encoder(input_tensors):
         intermediate_size=4*hidden_size,
         attention_half_width=hw,
         hidden_act='ReLU',
-        gating=GatingKind.ScalaGating
+        gating_h2m=GatingKind.ScalaGating,
+        gating_m2h=GatingKind.ScalaGating
     )
 
     output = obj(
@@ -196,15 +198,23 @@ def test_encoder(input_tensors):
 
 
 def test_embedding(input_ids):
-    ids, _, workspace_size, vocab_size, hidden_size, _, _, _, _ = input_ids
+    ids, m, workspace_size, vocab_size, hidden_size, _, _, _, _ = input_ids
+    nm = torch.ones_like(m, dtype=torch.bool)
+    nm[0, 0] = False
     obj = Embeddings(
         workspace_size=workspace_size,
         vocab_size=vocab_size,
         hidden_size=hidden_size
     )
 
-    output = obj(input_ids=ids)
+    output = obj(
+        input_ids=ids,
+        attention_mask=m,
+        normalize_mask=nm
+    )
+    loss = obj.loss_norm_emb()
     print(output)
+    print(loss)
 
 
 def test_language_model(input_ids):
@@ -222,7 +232,8 @@ def test_language_model(input_ids):
         intermediate_size=4 * hidden_size,
         attention_half_width=hw,
         hidden_act='leakyReLU',
-        gating=gating,
+        gating_h2m=gating,
+        gating_m2h=gating,
         layer_norm_eps=1e-8
     )
     lm_head = LanguageHeadConfig(

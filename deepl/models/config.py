@@ -302,7 +302,8 @@ class SGWEncoderConfig(ConfigBase):
             intermediate_size,
             attention_half_width,
             hidden_act='ReLU',
-            gating=GatingKind.NONE,
+            gating_h2m=GatingKind.NONE,
+            gating_m2h=GatingKind.NONE,
             max_position=None,
             layer_norm_eps=1e-8
     ):
@@ -312,16 +313,20 @@ class SGWEncoderConfig(ConfigBase):
         self.intermediate_size = intermediate_size
         self.attention_half_width = attention_half_width
         self.hidden_act = hidden_act
-        self.gating = gating
+        self.gating_h2m = gating_h2m
+        self.gating_m2h = gating_m2h
         self.max_position = max_position
         self.layer_norm_eps = layer_norm_eps
 
-        if not isinstance(self.gating, GatingKind):
-            self.gating = GatingKind[self.gating]
+        if not isinstance(self.gating_h2m, GatingKind):
+            self.gating_h2m = GatingKind[self.gating_h2m]
+        if not isinstance(self.gating_m2h, GatingKind):
+            self.gating_m2h = GatingKind[self.gating_m2h]
 
     def to_dict(self):
         output = super().to_dict()
-        output['gating'] = str(self.gating.name)
+        output['gating_h2m'] = str(self.gating_h2m.name)
+        output['gating_m2h'] = str(self.gating_m2h.name)
         return output
 
 
