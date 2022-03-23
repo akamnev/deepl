@@ -316,14 +316,26 @@ class ScalaGating(nn.Module):
         return reg_1, reg_2
 
 
-class SharedWorkSpace(nn.Module):
+def get_gating(gating, hidden_size):
+    if gating == GatingKind.NONE:
+        gating = NoGating()
+    elif gating == GatingKind.VectorGating:
+        gating = VectorGating(hidden_size=hidden_size)
+    elif gating == GatingKind.ScalaGating:
+        gating = ScalaGating(hidden_size=hidden_size)
+    else:
+        raise ValueError(
+            f'An unknown value `{gating}` of gating is specified '
+        )
+    return gating
+
+
+class GlobalCrossAttention(nn.Module):
     def __init__(
             self,
             hidden_size,
             num_attention_heads,
-            gating,
-            max_position=None,
-            layer_norm_eps=1e-8
+            max_position=None
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -331,46 +343,22 @@ class SharedWorkSpace(nn.Module):
         self.attention_head_size = hidden_size // num_attention_heads
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
-        self.query_h2m = nn.Linear(
+        self.query = nn.Linear(
             hidden_size, self.all_head_size, bias=False
         )
-        self.key_h2m = nn.Linear(
+        self.key = nn.Linear(
             hidden_size, self.all_head_size, bias=False
         )
-        self.value_h2m = nn.Linear(
+        self.value = nn.Linear(
             hidden_size, self.all_head_size, bias=False
         )
-        self.dropout_h2m = VariationalNormalEpanechnikovDropout(
+        self.dropout = VariationalNormalEpanechnikovDropout(
             input_size=self.all_head_size
         )
-        self.output_layer_h2m = nn.Linear(self.all_head_size, hidden_size)
-
-        self.query_m2h = nn.Linear(
-            hidden_size, self.all_head_size, bias=False
-        )
-        self.key_m2h = nn.Linear(
-            hidden_size, self.all_head_size, bias=False
-        )
-        self.value_m2h = nn.Linear(
-            hidden_size, self.all_head_size, bias=False
-        )
-        self.dropout_m2h = VariationalNormalEpanechnikovDropout(
-            input_size=self.all_head_size
-        )
-        self.output_layer_m2h = nn.Linear(self.all_head_size, hidden_size)
+        self.output_layer = nn.Linear(self.all_head_size, hidden_size)
 
         self.softmax = nn.Softmax(dim=-1)
 
-        if gating == GatingKind.NONE:
-            self.gating = NoGating()
-        elif gating == GatingKind.VectorGating:
-            self.gating = VectorGating(hidden_size=hidden_size)
-        elif gating == GatingKind.ScalaGating:
-            self.gating = ScalaGating(hidden_size=hidden_size)
-        else:
-            raise ValueError(
-                f'An unknown value `{gating}` of gating is specified '
-            )
         self.position_key = None
         if max_position is not None:
             position_shape = (
@@ -380,10 +368,6 @@ class SharedWorkSpace(nn.Module):
                 self.attention_head_size
             )
             self.position_key = nn.Parameter(torch.Tensor(*position_shape))
-
-        self.layer_norm_workspace = nn.LayerNorm(
-            hidden_size, eps=layer_norm_eps
-        )
 
         self.reset_parameters()
 
@@ -398,63 +382,6 @@ class SharedWorkSpace(nn.Module):
         )
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
-
-    def forward(
-            self,
-            workspace_states,
-            hidden_states,
-            attention_mask
-    ):
-        if self.training:
-            self._attention_mask_tensor = attention_mask
-
-        # update memory
-        query_ws = self.transpose_for_scores(self.query_h2m(workspace_states))
-        key_hs = self.transpose_for_scores(self.key_h2m(hidden_states))
-        value_hs = self.transpose_for_scores(self.value_h2m(hidden_states))
-
-        if self.position_key is not None:
-            t = key_hs.shape[-2]
-            key_hs = key_hs + self.position_key[..., :t, :]
-
-        context_ws, proba_h2m = self._multi_head_attention(
-            query_ws, key_hs, value_hs, attention_mask
-        )
-        context_ws = self.transpose_context(context_ws)
-        context_ws = self.dropout_h2m(context_ws)
-        output_ws = self.output_layer_h2m(context_ws)
-
-        # gating
-        workspace_states, reg_gating, f_gating = self.gating(
-            update=output_ws,
-            hidden=workspace_states
-        )
-        workspace_states = self.layer_norm_workspace(workspace_states)
-        # update hidden states
-        query_hs = self.transpose_for_scores(self.query_m2h(hidden_states))
-        key_ws = self.transpose_for_scores(self.key_m2h(workspace_states))
-        value_ws = self.transpose_for_scores(self.value_m2h(workspace_states))
-
-        context_hs, proba_m2h = self._multi_head_attention(
-            query_hs, key_ws, value_ws
-        )
-        context_hs = self.transpose_context(context_hs)
-        context_hs = self.dropout_m2h(context_hs, attention_mask)
-        output_hs = self.output_layer_m2h(context_hs)
-
-        loss_value = None
-        if self.training:
-            loss_value_h2m = _loss_value_unity(
-                value=value_hs,
-                mask=self._attention_mask_tensor
-            )
-            loss_value_m2h = _loss_value_unity(
-                value=value_ws
-            )
-            loss_value = 0.5 * (loss_value_h2m + loss_value_m2h)
-        regs = reg_gating + (loss_value, )
-        proba = proba_h2m, proba_m2h, f_gating
-        return workspace_states, output_hs, proba, regs
 
     def transpose_context(self, context):
         context = context.permute(0, 2, 1, 3)
@@ -474,6 +401,111 @@ class SharedWorkSpace(nn.Module):
 
         return context, proba
 
+    def forward(
+            self,
+            hidden_states_out,
+            hidden_states_in,
+            attention_mask_out=None,
+            attention_mask_in=None
+    ):
+        query = self.transpose_for_scores(self.query(hidden_states_out))
+        key = self.transpose_for_scores(self.key(hidden_states_in))
+        value = self.transpose_for_scores(self.value(hidden_states_in))
+
+        if self.position_key is not None:
+            t = key.shape[-2]
+            key = key + self.position_key[..., :t, :]
+
+        context, proba = self._multi_head_attention(
+            query, key, value, attention_mask_in
+        )
+        context = self.transpose_context(context)
+        context = self.dropout(context, attention_mask_out)
+        output = self.output_layer(context)
+
+        loss_value = None
+        if self.training:
+            loss_value = _loss_value_unity(
+                value=value,
+                mask=attention_mask_in
+            )
+        return output, proba, loss_value
+
+
+class SharedWorkSpace(nn.Module):
+    def __init__(
+            self,
+            hidden_size,
+            num_attention_heads,
+            gating_h2m,
+            gating_m2h,
+            max_position=None,
+            layer_norm_eps=1e-8
+    ):
+        super().__init__()
+
+        self.global_attention_h2m = GlobalCrossAttention(
+            hidden_size=hidden_size,
+            num_attention_heads=num_attention_heads,
+            max_position=max_position
+        )
+
+        self.global_attention_m2h = GlobalCrossAttention(
+            hidden_size=hidden_size,
+            num_attention_heads=num_attention_heads,
+            max_position=None
+        )
+
+        self.gating_h2m = get_gating(gating_h2m, hidden_size)
+        self.gating_m2h = get_gating(gating_m2h, hidden_size)
+
+        self.layer_norm_ws = nn.LayerNorm(
+            hidden_size, eps=layer_norm_eps
+        )
+        self.layer_norm_hs = nn.LayerNorm(
+            hidden_size, eps=layer_norm_eps
+        )
+
+    def forward(
+            self,
+            workspace_states,
+            hidden_states,
+            attention_mask
+    ):
+        update_ws, proba_h2m, loss_value_h2m = self.global_attention_h2m(
+            hidden_states_out=workspace_states,
+            hidden_states_in=hidden_states,
+            attention_mask_in=attention_mask
+        )
+        workspace_states, reg_gating_h2m, f_gating_h2m = self.gating_h2m(
+            update=update_ws,
+            hidden=workspace_states
+        )
+        workspace_states = self.layer_norm_ws(workspace_states)
+
+        update_hs, proba_m2h, loss_value_m2h = self.global_attention_m2h(
+            hidden_states_out=hidden_states,
+            hidden_states_in=workspace_states,
+            attention_mask_out=attention_mask
+        )
+        hidden_states, reg_gating_m2h, f_gating_m2h = self.gating_m2h(
+            update=update_hs,
+            hidden=hidden_states
+        )
+        hidden_states = self.layer_norm_hs(hidden_states)
+
+        loss_value = None
+        if self.training:
+            loss_value = 0.5 * (loss_value_h2m + loss_value_m2h)
+
+        regs = (
+            (reg_gating_h2m[0], reg_gating_m2h[0]),  # sigma_arg
+            (reg_gating_h2m[1], reg_gating_m2h[1]),  # diff h-u
+            loss_value
+        )
+        proba = proba_h2m, proba_m2h, f_gating_h2m, f_gating_m2h
+        return workspace_states, hidden_states, proba, regs
+
 
 class EncoderLayer(nn.Module):
     def __init__(
@@ -484,14 +516,10 @@ class EncoderLayer(nn.Module):
             attention_half_width,
             hidden_act,
             shared_work_space_unit,
-            gating,
             layer_norm_eps=1e-8
     ):
         super().__init__()
         self.layer_norm_local_self_attention = nn.LayerNorm(
-            hidden_size, eps=layer_norm_eps
-        )
-        self.layer_norm_global_attention = nn.LayerNorm(
             hidden_size, eps=layer_norm_eps
         )
         self.layer_norm_feedforward = nn.LayerNorm(
@@ -507,18 +535,8 @@ class EncoderLayer(nn.Module):
         self.feedforward = FeedForward(
             hidden_size=hidden_size,
             intermediate_size=intermediate_size,
-            hidden_act=hidden_act)
-
-        if gating == GatingKind.NONE:
-            self.gating = NoGating()
-        elif gating == GatingKind.VectorGating:
-            self.gating = VectorGating(hidden_size=hidden_size)
-        elif gating == GatingKind.ScalaGating:
-            self.gating = ScalaGating(hidden_size=hidden_size)
-        else:
-            raise ValueError(
-                f'An unknown value `{gating}` of gating is specified '
-            )
+            hidden_act=hidden_act
+        )
 
     def forward(
         self,
@@ -541,17 +559,8 @@ class EncoderLayer(nn.Module):
             attention_mask=attention_mask
         )
         workspace_states = shared_work_space_output[0]
-        update = shared_work_space_output[1]
-        proba_ws_h2m, proba_ws_m2h, f_gating_h2m = shared_work_space_output[2]
-        reg_h2m = shared_work_space_output[3][:2]
-        loss_value_unity = shared_work_space_output[3][2]
-
-        hidden_states, reg_m2h, f_gating_m2h = self.gating(
-            update=update,
-            hidden=hidden_states
-        )
-
-        hidden_states = self.layer_norm_global_attention(hidden_states)
+        hidden_states = shared_work_space_output[1]
+        regularisation = shared_work_space_output[3]
 
         feedforward_output = self.feedforward(
             hidden_states=hidden_states,
@@ -561,8 +570,8 @@ class EncoderLayer(nn.Module):
 
         hidden_states = self.layer_norm_feedforward(hidden_states)
 
-        proba = proba_lsa, proba_ws_h2m, proba_ws_m2h, f_gating_h2m, f_gating_m2h
-        regularisation = (reg_h2m[0], reg_m2h[0]), (reg_h2m[1], reg_m2h[1]), loss_value_unity
+        proba = (proba_lsa, ) + shared_work_space_output[2]
+
         return workspace_states, hidden_states, proba, regularisation
 
 
@@ -585,7 +594,8 @@ class Encoder(nn.Module):
         shared_work_space_unit = SharedWorkSpace(
             hidden_size=hidden_size,
             num_attention_heads=num_attention_heads,
-            gating=gating_h2m,
+            gating_h2m=gating_h2m,
+            gating_m2h=gating_m2h,
             max_position=max_position
         )
         self.layer = nn.ModuleList([
@@ -596,10 +606,10 @@ class Encoder(nn.Module):
                 attention_half_width=attention_half_width,
                 hidden_act=hidden_act,
                 shared_work_space_unit=shared_work_space_unit,
-                gating=gating_m2h,
                 layer_norm_eps=layer_norm_eps
             )
-            for _ in range(num_hidden_layers)])
+            for _ in range(num_hidden_layers)
+        ])
 
     def forward(
         self,

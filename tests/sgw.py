@@ -133,7 +133,8 @@ def test_workspace(input_tensors):
     obj = SharedWorkSpace(
         hidden_size=hidden_size,
         num_attention_heads=head_number,
-        gating=GatingKind.ScalaGating,
+        gating_h2m=GatingKind.ScalaGating,
+        gating_m2h=GatingKind.ScalaGating,
         max_position=None
     )
     m = torch.as_tensor(m, dtype=torch.bool)
@@ -151,7 +152,8 @@ def test_encoder_layer(input_tensors):
     swsu = SharedWorkSpace(
         hidden_size=hidden_size,
         num_attention_heads=head_number,
-        gating=GatingKind.ScalaGating
+        gating_h2m=GatingKind.ScalaGating,
+        gating_m2h=GatingKind.ScalaGating,
     )
 
     obj = EncoderLayer(
@@ -161,7 +163,6 @@ def test_encoder_layer(input_tensors):
         attention_half_width=hw,
         hidden_act='ReLU',
         shared_work_space_unit=swsu,
-        gating=GatingKind.ScalaGating,
     )
 
     output = obj(
