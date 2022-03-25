@@ -286,19 +286,24 @@ class SGWEmbeddingsConfig(ConfigBase):
             self,
             workspace_size,
             vocab_size,
-            hidden_size
+            workspace_hidden_size,
+            token_hidden_size
     ):
         self.workspace_size = workspace_size
         self.vocab_size = vocab_size
-        self.hidden_size = hidden_size
+        self.workspace_hidden_size = workspace_hidden_size
+        self.token_hidden_size = token_hidden_size
 
 
 class SGWEncoderConfig(ConfigBase):
     def __init__(
             self,
+            workspace_size,
             num_hidden_layers,
-            hidden_size,
-            num_attention_heads,
+            workspace_hidden_size,
+            token_hidden_size,
+            num_workspace_attention_heads,
+            num_token_attention_heads,
             intermediate_size,
             attention_half_width,
             hidden_act='ReLU',
@@ -307,9 +312,12 @@ class SGWEncoderConfig(ConfigBase):
             max_position=None,
             layer_norm_eps=1e-8
     ):
+        self.workspace_size = workspace_size
         self.num_hidden_layers = num_hidden_layers
-        self.hidden_size = hidden_size
-        self.num_attention_heads = num_attention_heads
+        self.workspace_hidden_size = workspace_hidden_size
+        self.token_hidden_size = token_hidden_size
+        self.num_workspace_attention_heads = num_workspace_attention_heads
+        self.num_token_attention_heads = num_token_attention_heads
         self.intermediate_size = intermediate_size
         self.attention_half_width = attention_half_width
         self.hidden_act = hidden_act

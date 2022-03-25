@@ -10,7 +10,8 @@ from deepl.models.sgw import SGWLanguageModel
 
 def create_example(
         batch_size_range=(3, 3),
-        ws_number_range=(5, 5),
+        ws_number_range=(1, 1),
+        ws_hidden_size_range=(32, 32),
         token_number_range=(10, 10),
         head_number_range=(2, 2),
         layer_number_range=(3, 3),
@@ -20,6 +21,7 @@ def create_example(
 ):
     batch_size = random.randint(*batch_size_range)
     workspace_number = random.randint(*ws_number_range)
+    ws_hidden_size = random.randint(*ws_hidden_size_range)
     token_number = random.randint(*token_number_range)
     head_number = random.randint(*head_number_range)
     layer_number = random.randint(*layer_number_range)
@@ -29,7 +31,7 @@ def create_example(
     hidden_size = head_size * head_number
 
     ws = torch.rand(
-        (batch_size, workspace_number, hidden_size),
+        (batch_size, workspace_number, ws_hidden_size),
         requires_grad=True,
         device=device
     )
@@ -49,13 +51,14 @@ def create_example(
             j = random.randint(1, token_number-1)
             m[i, j:] = 0.0
 
-    return ws, h, m, workspace_number, hidden_size, head_number, layer_number, hw
+    return ws, h, m, workspace_number, ws_hidden_size, hidden_size, head_number, layer_number, hw
 
 
 def create_ids_example(
         batch_size_range=(3, 3),
         token_number_range=(10, 10),
-        ws_size_range=(5, 5),
+        ws_size_range=(1, 1),
+        ws_hidden_size_range=(32, 32),
         vocab_size_range=(512, 512),
         layer_number_range=(3, 3),
         head_number_range=(2, 2),
@@ -68,6 +71,7 @@ def create_ids_example(
     token_number = random.randint(*token_number_range)
     workspace_size = random.randint(*ws_size_range)
     vocab_size = random.randint(*vocab_size_range)
+    ws_hidden_size = random.randint(*ws_hidden_size_range)
     layer_number = random.randint(*layer_number_range)
     head_number = random.randint(*head_number_range)
     head_size = random.randint(*head_size_range)
@@ -96,7 +100,7 @@ def create_ids_example(
             j = random.randint(1, token_number-1)
             m[i, j:] = 0.0
 
-    return ids, m, workspace_size, vocab_size, hidden_size, \
+    return ids, m, workspace_size, vocab_size, ws_hidden_size, hidden_size, \
            layer_number, head_number, hw, gating
 
 
@@ -129,13 +133,16 @@ def test_local_self_attention(input_tensors):
 
 
 def test_workspace(input_tensors):
-    ws, h, m, workspace_size, hidden_size, head_number, _, hw = input_tensors
+    ws, h, m, workspace_size, ws_hidden_size, hidden_size, head_number, _, hw = input_tensors
     obj = SharedWorkSpace(
-        hidden_size=hidden_size,
-        num_attention_heads=head_number,
+        workspace_size=workspace_size,
+        workspace_hidden_size=ws_hidden_size,
+        token_hidden_size=hidden_size,
+        num_workspace_attention_heads=head_number,
+        num_token_attention_heads=head_number,
         gating_h2m=GatingKind.ScalaGating,
         gating_m2h=GatingKind.ScalaGating,
-        max_position=None
+        max_position=512
     )
     m = torch.as_tensor(m, dtype=torch.bool)
     output = obj(
@@ -147,13 +154,17 @@ def test_workspace(input_tensors):
 
 
 def test_encoder_layer(input_tensors):
-    ws, h, m, workspace_size, hidden_size, head_number, _, hw = input_tensors
+    ws, h, m, workspace_size, ws_hidden_size, hidden_size, head_number, _, hw = input_tensors
     m = torch.as_tensor(m, dtype=torch.bool)
     swsu = SharedWorkSpace(
-        hidden_size=hidden_size,
-        num_attention_heads=head_number,
+        workspace_size=workspace_size,
+        workspace_hidden_size=ws_hidden_size,
+        token_hidden_size=hidden_size,
+        num_workspace_attention_heads=head_number,
+        num_token_attention_heads=head_number,
         gating_h2m=GatingKind.ScalaGating,
         gating_m2h=GatingKind.ScalaGating,
+        max_position=512
     )
 
     obj = EncoderLayer(
@@ -174,17 +185,21 @@ def test_encoder_layer(input_tensors):
 
 
 def test_encoder(input_tensors):
-    ws, h, m, workspace_size, hidden_size, head_number, layer_number, hw = input_tensors
+    ws, h, m, workspace_size, ws_hidden_size, hidden_size, head_number, layer_number, hw = input_tensors
     m = torch.as_tensor(m, dtype=torch.bool)
     obj = Encoder(
+        workspace_size=workspace_size,
         num_hidden_layers=layer_number,
-        hidden_size=hidden_size,
-        num_attention_heads=head_number,
+        workspace_hidden_size=ws_hidden_size,
+        token_hidden_size=hidden_size,
+        num_workspace_attention_heads=head_number,
+        num_token_attention_heads=head_number,
         intermediate_size=4*hidden_size,
         attention_half_width=hw,
         hidden_act='ReLU',
         gating_h2m=GatingKind.ScalaGating,
-        gating_m2h=GatingKind.ScalaGating
+        gating_m2h=GatingKind.ScalaGating,
+        max_position=512
     )
 
     output = obj(
@@ -199,13 +214,14 @@ def test_encoder(input_tensors):
 
 
 def test_embedding(input_ids):
-    ids, m, workspace_size, vocab_size, hidden_size, _, _, _, _ = input_ids
+    ids, m, workspace_size, vocab_size, ws_hidden_size, hidden_size, _, _, _, _ = input_ids
     nm = torch.ones_like(m, dtype=torch.bool)
     nm[0, 0] = False
     obj = Embeddings(
         workspace_size=workspace_size,
         vocab_size=vocab_size,
-        hidden_size=hidden_size
+        workspace_hidden_size=ws_hidden_size,
+        token_hidden_size=hidden_size
     )
 
     output = obj(
@@ -219,17 +235,21 @@ def test_embedding(input_ids):
 
 
 def test_language_model(input_ids):
-    ids, m, workspace_size, vocab_size, hidden_size, \
+    ids, m, workspace_size, vocab_size, ws_hidden_size, hidden_size, \
         layer_number, head_number, hw, gating = input_ids
     embeddings = SGWEmbeddingsConfig(
         workspace_size=workspace_size,
         vocab_size=vocab_size,
-        hidden_size=hidden_size
+        workspace_hidden_size=ws_hidden_size,
+        token_hidden_size=hidden_size
     )
     encoder = SGWEncoderConfig(
+        workspace_size=workspace_size,
         num_hidden_layers=layer_number,
-        hidden_size=hidden_size,
-        num_attention_heads=head_number,
+        workspace_hidden_size=ws_hidden_size,
+        token_hidden_size=hidden_size,
+        num_workspace_attention_heads=head_number,
+        num_token_attention_heads=head_number,
         intermediate_size=4 * hidden_size,
         attention_half_width=hw,
         hidden_act='leakyReLU',
@@ -255,6 +275,8 @@ def test_language_model(input_ids):
         input_ids=ids,
         attention_mask=m,
         n_layer=None,
-        output_hidden_states=False
+        output_hidden_states=False,
+        output_proba=True,
+        output_regularisation=True
     )
     print(output)

@@ -13,12 +13,16 @@ class SGWLanguageModel(ModelBase):
         self.embedding = Embeddings(
             workspace_size=config.embeddings.workspace_size,
             vocab_size=config.embeddings.vocab_size,
-            hidden_size=config.embeddings.hidden_size
+            workspace_hidden_size=config.embeddings.workspace_hidden_size,
+            token_hidden_size=config.embeddings.token_hidden_size
         )
         self.encoder = Encoder(
+            workspace_size=config.encoder.workspace_size,
             num_hidden_layers=config.encoder.num_hidden_layers,
-            hidden_size=config.encoder.hidden_size,
-            num_attention_heads=config.encoder.num_attention_heads,
+            workspace_hidden_size=config.encoder.workspace_hidden_size,
+            token_hidden_size=config.encoder.token_hidden_size,
+            num_workspace_attention_heads=config.encoder.num_workspace_attention_heads,
+            num_token_attention_heads=config.encoder.num_token_attention_heads,
             intermediate_size=config.encoder.intermediate_size,
             attention_half_width=config.encoder.attention_half_width,
             hidden_act=config.encoder.hidden_act,

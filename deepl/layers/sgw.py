@@ -333,29 +333,29 @@ def get_gating(gating, hidden_size):
 class GlobalCrossAttention(nn.Module):
     def __init__(
             self,
-            hidden_size,
+            hidden_size_out,
+            hidden_size_in,
             num_attention_heads,
             max_position=None
     ):
         super().__init__()
-        self.hidden_size = hidden_size
         self.num_attention_heads = num_attention_heads
-        self.attention_head_size = hidden_size // num_attention_heads
+        self.attention_head_size = hidden_size_out // num_attention_heads
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
         self.query = nn.Linear(
-            hidden_size, self.all_head_size, bias=False
+            hidden_size_out, self.all_head_size, bias=False
         )
         self.key = nn.Linear(
-            hidden_size, self.all_head_size, bias=False
+            hidden_size_in, self.all_head_size, bias=False
         )
         self.value = nn.Linear(
-            hidden_size, self.all_head_size, bias=False
+            hidden_size_in, self.all_head_size, bias=False
         )
         self.dropout = VariationalNormalEpanechnikovDropout(
             input_size=self.all_head_size
         )
-        self.output_layer = nn.Linear(self.all_head_size, hidden_size)
+        self.output_layer = nn.Linear(self.all_head_size, hidden_size_out)
 
         self.softmax = nn.Softmax(dim=-1)
 
@@ -432,11 +432,44 @@ class GlobalCrossAttention(nn.Module):
         return output, proba, loss_value
 
 
+class VectorGlobalCrossAttention(nn.Module):
+    def __init__(
+            self,
+            hidden_size_out,
+            hidden_size_in
+    ):
+        super().__init__()
+
+        self.value = nn.Linear(
+            hidden_size_in, hidden_size_out
+        )
+        self.dropout = VariationalNormalEpanechnikovDropout(
+            input_size=hidden_size_out
+        )
+
+    def forward(
+            self,
+            hidden_states_out,
+            hidden_states_in,
+            attention_mask_out=None,
+            attention_mask_in=None
+    ):
+        value = self.value(hidden_states_in)
+        output = self.dropout(value, attention_mask_out)
+
+        proba = None
+        loss_value = None
+        return output, proba, loss_value
+
+
 class SharedWorkSpace(nn.Module):
     def __init__(
             self,
-            hidden_size,
-            num_attention_heads,
+            workspace_size,
+            workspace_hidden_size,
+            token_hidden_size,
+            num_workspace_attention_heads,
+            num_token_attention_heads,
             gating_h2m,
             gating_m2h,
             max_position=None,
@@ -445,25 +478,33 @@ class SharedWorkSpace(nn.Module):
         super().__init__()
 
         self.global_attention_h2m = GlobalCrossAttention(
-            hidden_size=hidden_size,
-            num_attention_heads=num_attention_heads,
+            hidden_size_out=workspace_hidden_size,
+            hidden_size_in=token_hidden_size,
+            num_attention_heads=num_workspace_attention_heads,
             max_position=max_position
         )
 
-        self.global_attention_m2h = GlobalCrossAttention(
-            hidden_size=hidden_size,
-            num_attention_heads=num_attention_heads,
-            max_position=None
-        )
+        if workspace_size > 1:
+            self.global_attention_m2h = GlobalCrossAttention(
+                hidden_size_out=token_hidden_size,
+                hidden_size_in=workspace_hidden_size,
+                num_attention_heads=num_token_attention_heads,
+                max_position=None
+            )
+        else:
+            self.global_attention_m2h = VectorGlobalCrossAttention(
+                hidden_size_out=token_hidden_size,
+                hidden_size_in=workspace_hidden_size
+            )
 
-        self.gating_h2m = get_gating(gating_h2m, hidden_size)
-        self.gating_m2h = get_gating(gating_m2h, hidden_size)
+        self.gating_h2m = get_gating(gating_h2m, workspace_hidden_size)
+        self.gating_m2h = get_gating(gating_m2h, token_hidden_size)
 
         self.layer_norm_ws = nn.LayerNorm(
-            hidden_size, eps=layer_norm_eps
+            workspace_hidden_size, eps=layer_norm_eps
         )
         self.layer_norm_hs = nn.LayerNorm(
-            hidden_size, eps=layer_norm_eps
+            token_hidden_size, eps=layer_norm_eps
         )
 
     def forward(
@@ -494,9 +535,17 @@ class SharedWorkSpace(nn.Module):
         )
         hidden_states = self.layer_norm_hs(hidden_states)
 
-        loss_value = None
+        loss_value = 0.0
+        loss_value_cnt = 0
         if self.training:
-            loss_value = 0.5 * (loss_value_h2m + loss_value_m2h)
+            if loss_value_h2m is not None:
+                loss_value = loss_value + loss_value_h2m
+                loss_value_cnt += 1
+            if loss_value_m2h is not None:
+                loss_value = loss_value + loss_value_m2h
+                loss_value_cnt += 1
+            if loss_value_cnt > 0:
+                loss_value = loss_value / loss_value_cnt
 
         regs = (
             (reg_gating_h2m[0], reg_gating_m2h[0]),  # sigma_arg
@@ -578,9 +627,12 @@ class EncoderLayer(nn.Module):
 class Encoder(nn.Module):
     def __init__(
             self,
+            workspace_size,
             num_hidden_layers,
-            hidden_size,
-            num_attention_heads,
+            workspace_hidden_size,
+            token_hidden_size,
+            num_workspace_attention_heads,
+            num_token_attention_heads,
             intermediate_size,
             attention_half_width,
             hidden_act='ReLU',
@@ -592,16 +644,19 @@ class Encoder(nn.Module):
         super().__init__()
         self.num_hidden_layers = num_hidden_layers
         shared_work_space_unit = SharedWorkSpace(
-            hidden_size=hidden_size,
-            num_attention_heads=num_attention_heads,
+            workspace_size=workspace_size,
+            workspace_hidden_size=workspace_hidden_size,
+            token_hidden_size=token_hidden_size,
+            num_workspace_attention_heads=num_workspace_attention_heads,
+            num_token_attention_heads=num_token_attention_heads,
             gating_h2m=gating_h2m,
             gating_m2h=gating_m2h,
             max_position=max_position
         )
         self.layer = nn.ModuleList([
             EncoderLayer(
-                hidden_size=hidden_size,
-                num_attention_heads=num_attention_heads,
+                hidden_size=token_hidden_size,
+                num_attention_heads=num_token_attention_heads,
                 intermediate_size=intermediate_size,
                 attention_half_width=attention_half_width,
                 hidden_act=hidden_act,
@@ -692,19 +747,20 @@ class Embeddings(nn.Module):
             self,
             workspace_size,
             vocab_size,
-            hidden_size
+            workspace_hidden_size,
+            token_hidden_size
     ):
         super().__init__()
         self.init_workspace = nn.Parameter(torch.Tensor(
-            1, workspace_size, hidden_size
+            1, workspace_size, workspace_hidden_size
         ))
 
         self.word_embeddings = nn.Embedding(
             num_embeddings=vocab_size,
-            embedding_dim=hidden_size
+            embedding_dim=token_hidden_size
         )
-        self.dropout_ws = VariationalNormalEpanechnikovDropout(hidden_size)
-        self.dropout_emb = VariationalNormalEpanechnikovDropout(hidden_size)
+        self.dropout_ws = VariationalNormalEpanechnikovDropout(workspace_hidden_size)
+        self.dropout_emb = VariationalNormalEpanechnikovDropout(token_hidden_size)
 
         self.mean_emb = None
         self.std_emb = None
