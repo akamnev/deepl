@@ -44,6 +44,7 @@ class SGWLanguageModel(ModelBase):
         workspace, embedding = self.embedding(
             input_ids=input_ids,
             attention_mask=attention_mask,
+            avg_token_mix=kwargs.get('avg_token_mix', None),
             normalize_mask=kwargs.get('normalize_mask', None),
         )
         outputs = self.encoder(

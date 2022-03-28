@@ -773,21 +773,30 @@ class Embeddings(nn.Module):
     def reset_parameters(self):
         nn.init.normal_(self.init_workspace)
 
-    def forward(self, input_ids, attention_mask, normalize_mask=None):
+    def forward(
+            self,
+            input_ids,
+            attention_mask,
+            avg_token_mix=None,
+            normalize_mask=None
+    ):
         bs = input_ids.shape[0]
         workspace = self.init_workspace.repeat([bs, 1, 1])
         embeddings = self.word_embeddings(input_ids)
 
+        if avg_token_mix is not None:
+            embeddings = avg_token_mix @ embeddings
+
         workspace = self.dropout_ws(workspace)
         embeddings = self.dropout_emb(embeddings, attention_mask)
 
-        workspace, embeddings = self.normalize_embedding(
-            workspace, embeddings, normalize_mask
-        )
+        # workspace, embeddings = self.normalize_embedding(
+        #     workspace, embeddings, normalize_mask
+        # )
         return workspace, embeddings
 
     def normalize_embedding(self, workspace, embeddings, normalize_mask=None):
-        """Данный метод необходим чтобы обнулить вектор соотвествующий
+        """Данный метод необходим чтобы обнулить вектор соответствующий
         токену <mask>"""
 
         self.mean_ws = torch.mean(workspace, dim=-1, keepdim=True)
