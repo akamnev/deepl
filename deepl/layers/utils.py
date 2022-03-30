@@ -54,11 +54,13 @@ def kld_gaussian(mu, log_sigma, nu=0.0, rho=1.0):
     and a standard normal distribution
     """
     device = mu.device
-    nu = torch.as_tensor(nu, device=device)
     rho = torch.as_tensor(rho, device=device)
     delta_variance = 2.0 * (log_sigma - torch.log(rho))
     variance_term = torch.sum(torch.exp(delta_variance) - delta_variance)
-    mean_term = torch.sum((mu - nu) ** 2 / rho)
+    mean_term = 0.0
+    if nu is not None:
+        nu = torch.as_tensor(nu, device=device)
+        mean_term = torch.sum((mu - nu) ** 2 / rho)
     return 0.5 * (mean_term + variance_term - 1.0)
 
 

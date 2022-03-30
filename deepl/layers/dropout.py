@@ -39,9 +39,11 @@ class VariationalBase(nn.Module):
         self.num_batches_tracked.zero_()
 
     @torch.jit.unused
-    def update(self,
-               input_vector: torch.Tensor,
-               mask: Optional[torch.Tensor] = None):
+    def update(
+        self,
+        input_vector: torch.Tensor,
+        mask: Optional[torch.Tensor] = None
+    ):
         input_vector = input_vector.view(-1, self.input_size)
         if mask is not None:
             mask = mask.view(-1)
@@ -80,9 +82,11 @@ class VariationalGaussianDropout(VariationalBase):
         self.log_sigma.data.fill_(-1.0)
         self._mean = None
 
-    def forward(self,
-                vector: torch.Tensor,
-                mask: Optional[torch.Tensor] = None):
+    def forward(
+        self,
+        vector: torch.Tensor,
+        mask: Optional[torch.Tensor] = None
+    ):
         epsilon = torch.randn(vector.size(), device=vector.device)
         if self.truncate is not None:
             epsilon = torch.fmod(epsilon, self.truncate)
@@ -114,9 +118,11 @@ class VariationalNormalEpanechnikovDropout(VariationalBase):
         self._const = 0.5*math.log(90.0*math.pi) - 7./6.
         self._shift = 0.5*math.log(5.0)
 
-    def forward(self,
-                vector: torch.Tensor,
-                mask: Optional[torch.Tensor] = None):
+    def forward(
+        self,
+        vector: torch.Tensor,
+        mask: Optional[torch.Tensor] = None
+    ):
 
         epsilon = rand_epanechnikov_trig(vector.size(), device=vector.device)
         if mask is not None:
