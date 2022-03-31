@@ -107,7 +107,7 @@ class AdamW(Optimizer):
 
         return loss
     
-    def zero_grad(self):
+    def zero_grad(self, set_to_none=True):
         """Clears the gradients of all optimized :class:`torch.Tensor` s.
         PyTorch Performance Tuning Guide - Szymon Migacz, NVIDIA:
             * doesn't execute memset for every parameter
@@ -240,7 +240,7 @@ class SGDW(Optimizer):
 
         return loss
 
-    def zero_grad(self):
+    def zero_grad(self, set_to_none=True):
         """Clears the gradients of all optimized :class:`torch.Tensor` s.
         PyTorch Performance Tuning Guide - Szymon Migacz, NVIDIA:
             * doesn't execute memset for every parameter
@@ -253,18 +253,17 @@ class SGDW(Optimizer):
                     p.grad = None
 
 
-class AdaSGDW(Optimizer):
+class RMSPropW(Optimizer):
     """
-    Experimental optimizer
     Parameters:
         params (:obj:`Iterable[torch.nn.parameter.Parameter]`):
             Iterable of parameters to optimize or dictionaries defining parameter groups.
         lr (:obj:`float`, `optional`, defaults to 1e-3):
             The learning rate to use.
         betas (:obj:`Tuple[float,float]`, `optional`, defaults to (0.9, 0.999)):
-            Adam's betas parameters (b1, b2).
+            RMSPropW's betas parameters (b1, b2).
         eps (:obj:`float`, `optional`, defaults to 1e-6):
-            Adam's epsilon for numerical stability.
+            RMSPropW's epsilon for numerical stability.
         weight_decay (:obj:`float`, `optional`, defaults to 0):
             Decoupled weight decay to apply.
     """
@@ -272,10 +271,9 @@ class AdaSGDW(Optimizer):
     def __init__(
         self,
         params: Iterable[torch.nn.parameter.Parameter],
-        lr: float = 1e-5,
-        betas: Tuple[float, float] = (0.999, 0.9),
-        eps: float = 1e-6,
-        weight_decay: float = 0.0
+        lr: float = 1e-3,
+        betas: Tuple[float, float] = (0.9, 0.99),
+        eps: float = 1e-6
     ):
         if lr < 0.0:
             raise ValueError("Invalid learning rate: {} - should be >= 0.0".format(lr))
@@ -285,7 +283,7 @@ class AdaSGDW(Optimizer):
             raise ValueError("Invalid beta parameter: {} - should be in [0.0, 1.0)".format(betas[1]))
         if not 0.0 <= eps:
             raise ValueError("Invalid epsilon value: {} - should be >= 0.0".format(eps))
-        defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
+        defaults = dict(lr=lr, betas=betas, eps=eps)
         super().__init__(params, defaults)
 
     @torch.no_grad()
@@ -307,7 +305,7 @@ class AdaSGDW(Optimizer):
                     continue
                 grad = p.grad
                 if grad.is_sparse:
-                    raise RuntimeError("AdaSGDW does not support sparse gradients")
+                    raise RuntimeError("RMSPropW does not support sparse gradients")
 
                 state = self.state[p]
 
@@ -331,16 +329,14 @@ class AdaSGDW(Optimizer):
                                              value=(1.0 - beta1) * step_size)
                 p.sub_(exp_avg)
 
-                if group["weight_decay"] > 0.0:
-                    p.add_(p.data, alpha=-step_size * group["weight_decay"])
-                if "l1" in group and group["l1"] > 0.0:
-                    p.add_(torch.sign(p.data), alpha=-step_size * group["l1"])
-                if "only_with_grad" in group and group["weight_decay"] > 0.0:
-                    p.add_(p.data * torch.abs(torch.sign(grad)), alpha=-step_size * group["weight_decay"])
+                if "weight_decay_l2" in group and group["weight_decay_l2"] > 0.0:
+                    p.add_(p.data, alpha=-step_size * group["weight_decay_l2"])
+                if "weight_decay_l1" in group and group["weight_decay_l1"] > 0.0:
+                    p.add_(torch.sign(p.data), alpha=-step_size * group["weight_decay_l1"])
 
         return loss
 
-    def zero_grad(self):
+    def zero_grad(self, set_to_none=True):
         """Clears the gradients of all optimized :class:`torch.Tensor` s.
         PyTorch Performance Tuning Guide - Szymon Migacz, NVIDIA:
             * doesn't execute memset for every parameter
@@ -440,7 +436,7 @@ class Lamb(Optimizer):
 
         return loss
 
-    def zero_grad(self):
+    def zero_grad(self, set_to_none=True):
         """Clears the gradients of all optimized :class:`torch.Tensor` s.
         PyTorch Performance Tuning Guide - Szymon Migacz, NVIDIA:
             * doesn't execute memset for every parameter
@@ -535,7 +531,7 @@ class AdaLambW(Optimizer):
 
         return loss
 
-    def zero_grad(self):
+    def zero_grad(self, set_to_none=True):
         """Clears the gradients of all optimized :class:`torch.Tensor` s.
         PyTorch Performance Tuning Guide - Szymon Migacz, NVIDIA:
             * doesn't execute memset for every parameter
