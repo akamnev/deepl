@@ -1,9 +1,12 @@
 import torch.nn as nn
+from torch.utils import checkpoint
 from .activations import get_activation
 from .dropout import VariationalNormalEpanechnikovDropout
 from ..models.config import LanguageHeadConfig, VectorMeanHeadConfig, \
     VectorMaxHeadConfig, LinRegHeadConfig, LanguageHeadLNConfig, \
     VectorMeanLNHeadConfig
+
+USE_CHECKPOINT = True
 
 
 def get_head_by_config(config):
@@ -60,7 +63,10 @@ class LanguageModelHead(HeadBase):
             embedding = embedding[labels_mask]
         hidden = self.dense(embedding)
         hidden = self.dense_dropout(hidden, attention_mask)
-        hidden = self.act(hidden)
+        if USE_CHECKPOINT:
+            hidden = checkpoint.checkpoint(self.act, hidden)
+        else:
+            hidden = self.act(hidden)
         scores = self.decoder(hidden)
         scores = self.decoder_dropout(scores, attention_mask)
         return scores

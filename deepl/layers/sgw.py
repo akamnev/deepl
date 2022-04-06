@@ -4,6 +4,9 @@ import torch.nn as nn
 from .dropout import VariationalNormalEpanechnikovDropout
 from .activations import get_activation
 from ..models.config import GatingKind
+from torch.utils import checkpoint
+
+USE_CHECKPOINT = True
 
 
 def _build_position_index(
@@ -199,7 +202,12 @@ class FeedForward(nn.Module):
     def forward(self, hidden_states, attention_mask):
         intermediate_states = self.dense_input(hidden_states)
         intermediate_states = self.dropout(intermediate_states, attention_mask)
-        intermediate_states = self.intermediate_act_fn(intermediate_states)
+        if USE_CHECKPOINT:
+            intermediate_states = checkpoint.checkpoint(
+                self.intermediate_act_fn, intermediate_states
+            )
+        else:
+            intermediate_states = self.intermediate_act_fn(intermediate_states)
         output_states = self.dense_output(intermediate_states)
         return output_states
 
