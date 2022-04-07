@@ -297,20 +297,21 @@ class SGWEmbeddingsConfig(ConfigBase):
 
 class SGWEncoderConfig(ConfigBase):
     def __init__(
-            self,
-            workspace_size,
-            num_hidden_layers,
-            workspace_hidden_size,
-            token_hidden_size,
-            num_workspace_attention_heads,
-            num_token_attention_heads,
-            intermediate_size,
-            attention_half_width,
-            hidden_act='ReLU',
-            gating_h2m=GatingKind.NONE,
-            gating_m2h=GatingKind.NONE,
-            max_position=None,
-            layer_norm_eps=1e-8
+        self,
+        workspace_size,
+        num_hidden_layers,
+        workspace_hidden_size,
+        token_hidden_size,
+        num_workspace_attention_heads,
+        num_token_attention_heads,
+        intermediate_size,
+        attention_half_width,
+        hidden_act='ReLU',
+        gating_h2m=GatingKind.NONE,
+        gating_m2h=GatingKind.NONE,
+        max_position=None,
+        layer_norm_eps=1e-8,
+        use_local_self_attention=True
     ):
         self.workspace_size = workspace_size
         self.num_hidden_layers = num_hidden_layers
@@ -325,6 +326,7 @@ class SGWEncoderConfig(ConfigBase):
         self.gating_m2h = gating_m2h
         self.max_position = max_position
         self.layer_norm_eps = layer_norm_eps
+        self.use_local_self_attention = use_local_self_attention
 
         if not isinstance(self.gating_h2m, GatingKind):
             self.gating_h2m = GatingKind[self.gating_h2m]

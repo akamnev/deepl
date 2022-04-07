@@ -29,7 +29,8 @@ class SGWLanguageModel(ModelBase):
             gating_h2m=config.encoder.gating_h2m,
             gating_m2h=config.encoder.gating_m2h,
             max_position=config.encoder.max_position,
-            layer_norm_eps=config.encoder.layer_norm_eps
+            layer_norm_eps=config.encoder.layer_norm_eps,
+            use_local_self_attention=config.encoder.use_local_self_attention
         )
         self.heads = torch.nn.ModuleDict(
             {name: get_head_by_config(cfg) for name, cfg in config.heads.items()}

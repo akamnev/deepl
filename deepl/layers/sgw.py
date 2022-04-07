@@ -566,29 +566,33 @@ class SharedWorkSpace(nn.Module):
 
 class EncoderLayer(nn.Module):
     def __init__(
-            self,
-            hidden_size,
-            num_attention_heads,
-            intermediate_size,
-            attention_half_width,
-            hidden_act,
-            shared_work_space_unit,
-            layer_norm_eps=1e-8
+        self,
+        hidden_size,
+        num_attention_heads,
+        intermediate_size,
+        attention_half_width,
+        hidden_act,
+        shared_work_space_unit,
+        layer_norm_eps=1e-8,
+        use_local_self_attention=True
     ):
         super().__init__()
-        self.layer_norm_local_self_attention = nn.LayerNorm(
-            hidden_size, eps=layer_norm_eps
-        )
+        self.layer_norm_local_self_attention = None
+        self.local_self_attention = None
+        if use_local_self_attention:
+            self.layer_norm_local_self_attention = nn.LayerNorm(
+                hidden_size, eps=layer_norm_eps
+            )
+            self.local_self_attention = LocalSelfAttention(
+                hidden_size=hidden_size,
+                num_attention_heads=num_attention_heads,
+                attention_half_width=attention_half_width
+            )
+        self.shared_work_space_unit = shared_work_space_unit
+
         self.layer_norm_feedforward = nn.LayerNorm(
             hidden_size, eps=layer_norm_eps
         )
-        self.local_self_attention = LocalSelfAttention(
-            hidden_size=hidden_size,
-            num_attention_heads=num_attention_heads,
-            attention_half_width=attention_half_width
-        )
-        self.shared_work_space_unit = shared_work_space_unit
-
         self.feedforward = FeedForward(
             hidden_size=hidden_size,
             intermediate_size=intermediate_size,
@@ -602,13 +606,15 @@ class EncoderLayer(nn.Module):
         attention_mask,
         position_index=None
     ):
-        attention_output, proba_lsa = self.local_self_attention(
-            hidden_states=hidden_states,
-            attention_mask=attention_mask,
-            position_index=position_index
-        )
-        hidden_states = hidden_states + attention_output
-        hidden_states = self.layer_norm_local_self_attention(hidden_states)
+        proba_lsa = None
+        if self.local_self_attention is not None:
+            attention_output, proba_lsa = self.local_self_attention(
+                hidden_states=hidden_states,
+                attention_mask=attention_mask,
+                position_index=position_index
+            )
+            hidden_states = hidden_states + attention_output
+            hidden_states = self.layer_norm_local_self_attention(hidden_states)
 
         shared_work_space_output = self.shared_work_space_unit(
             workspace_states=workspace_states,
@@ -634,20 +640,21 @@ class EncoderLayer(nn.Module):
 
 class Encoder(nn.Module):
     def __init__(
-            self,
-            workspace_size,
-            num_hidden_layers,
-            workspace_hidden_size,
-            token_hidden_size,
-            num_workspace_attention_heads,
-            num_token_attention_heads,
-            intermediate_size,
-            attention_half_width,
-            hidden_act='ReLU',
-            gating_h2m=GatingKind.NONE,
-            gating_m2h=GatingKind.NONE,
-            max_position=None,
-            layer_norm_eps=1e-8
+        self,
+        workspace_size,
+        num_hidden_layers,
+        workspace_hidden_size,
+        token_hidden_size,
+        num_workspace_attention_heads,
+        num_token_attention_heads,
+        intermediate_size,
+        attention_half_width,
+        hidden_act='ReLU',
+        gating_h2m=GatingKind.NONE,
+        gating_m2h=GatingKind.NONE,
+        max_position=None,
+        layer_norm_eps=1e-8,
+        use_local_self_attention=True
     ):
         super().__init__()
         self.num_hidden_layers = num_hidden_layers
@@ -669,7 +676,8 @@ class Encoder(nn.Module):
                 attention_half_width=attention_half_width,
                 hidden_act=hidden_act,
                 shared_work_space_unit=shared_work_space_unit,
-                layer_norm_eps=layer_norm_eps
+                layer_norm_eps=layer_norm_eps,
+                use_local_self_attention=use_local_self_attention
             )
             for _ in range(num_hidden_layers)
         ])
