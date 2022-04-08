@@ -14,7 +14,8 @@ class SGWLanguageModel(ModelBase):
             workspace_size=config.embeddings.workspace_size,
             vocab_size=config.embeddings.vocab_size,
             workspace_hidden_size=config.embeddings.workspace_hidden_size,
-            token_hidden_size=config.embeddings.token_hidden_size
+            token_hidden_size=config.embeddings.token_hidden_size,
+            max_position=config.embeddings.max_position
         )
         self.encoder = Encoder(
             workspace_size=config.encoder.workspace_size,

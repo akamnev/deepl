@@ -221,7 +221,8 @@ def test_embedding(input_ids):
         workspace_size=workspace_size,
         vocab_size=vocab_size,
         workspace_hidden_size=ws_hidden_size,
-        token_hidden_size=hidden_size
+        token_hidden_size=hidden_size,
+        max_position=512
     )
 
     output = obj(

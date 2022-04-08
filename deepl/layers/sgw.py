@@ -760,11 +760,12 @@ class Encoder(nn.Module):
 
 class Embeddings(nn.Module):
     def __init__(
-            self,
-            workspace_size,
-            vocab_size,
-            workspace_hidden_size,
-            token_hidden_size
+        self,
+        workspace_size,
+        vocab_size,
+        workspace_hidden_size,
+        token_hidden_size,
+        max_position=None
     ):
         super().__init__()
         self.init_workspace = nn.Parameter(torch.Tensor(
@@ -775,6 +776,12 @@ class Embeddings(nn.Module):
             num_embeddings=vocab_size,
             embedding_dim=token_hidden_size
         )
+        self.position_embeddings = None
+        if max_position is not None:
+            self.position_embeddings = nn.Embedding(
+                num_embeddings=max_position,
+                embedding_dim=token_hidden_size
+            )
         self.dropout_ws = VariationalNormalEpanechnikovDropout(workspace_hidden_size)
         self.dropout_emb = VariationalNormalEpanechnikovDropout(token_hidden_size)
 
@@ -802,6 +809,13 @@ class Embeddings(nn.Module):
 
         if avg_token_mix is not None:
             embeddings = avg_token_mix @ embeddings
+
+        if self.position_embeddings is not None:
+            bs, nt = input_ids.shape
+            pos = torch.arange(0, nt, device=input_ids.device)
+            pos = pos.repeat(bs, 1)
+            pos_emb = self.position_embeddings(pos)
+            embeddings = embeddings + pos_emb
 
         workspace = self.dropout_ws(workspace)
         embeddings = self.dropout_emb(embeddings, attention_mask)
