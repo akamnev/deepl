@@ -1,7 +1,7 @@
 import torch
 from .base import ModelBase
 from .config import SGWLanguageModelConfig
-from ..layers.sgw import Embeddings, Encoder
+from ..layers.sgw import Embeddings, Encoder, Decoder, DecoderEmbeddings
 from ..layers.headers import get_head_by_config
 
 
@@ -76,6 +76,72 @@ class SGWLanguageModel(ModelBase):
                 continue
             outputs[name] = head(
                 workspace=outputs['workspace'],
+                embedding=outputs['embedding'],
+                attention_mask=attention_mask,
+                **kwargs
+            )
+        return outputs
+
+
+class DecoderModel(ModelBase):
+    config_cls = SGWLanguageModelConfig
+
+    def __init__(self, config: SGWLanguageModelConfig):
+        super().__init__(config)
+        self.embedding = DecoderEmbeddings(
+            vocab_size=config.embeddings.vocab_size,
+            hidden_size=config.embeddings.hidden_size,
+            max_position=config.embeddings.max_position
+        )
+        self.encoder = Decoder(
+            num_hidden_layers=config.encoder.num_hidden_layers,
+            encoder_hidden_size=config.encoder.encoder_hidden_size,
+            token_hidden_size=config.encoder.token_hidden_size,
+            num_attention_heads=config.encoder.num_attention_heads,
+            intermediate_size=config.encoder.intermediate_size,
+            hidden_act=config.encoder.hidden_act,
+            layer_norm_eps=config.encoder.layer_norm_eps,
+        )
+        self.heads = torch.nn.ModuleDict(
+            {name: get_head_by_config(cfg) for name, cfg in config.heads.items()}
+        )
+
+    def forward(
+        self,
+        input_ids,
+        position_ids,
+        attention_mask,
+        encoder_hidden_states,
+        encoder_attention_mask,
+        **kwargs
+    ):
+        embedding = self.embedding(
+            input_ids=input_ids,
+            position_ids=position_ids,
+            attention_mask=attention_mask
+        )
+        outputs = self.encoder(
+            hidden_states=embedding,
+            attention_mask=attention_mask,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
+            n_layer=kwargs.get('n_layer', None),
+            output_hidden_states=kwargs.get('output_hidden_states', False),
+            output_proba=kwargs.get('output_proba', False),
+            output_regularisation=kwargs.get('output_regularisation', False),
+        )
+        outputs = {
+            'embedding': outputs[0],
+            'all_hidden_states': outputs[1],
+            'all_proba_sa': outputs[2],
+            'all_proba_ca': outputs[3],
+            'all_sgw_value_unity': outputs[4]
+        }
+        exclude_heads = kwargs.get('exclude_heads', set())
+        for name, head in self.heads.items():
+            if exclude_heads and name in exclude_heads:
+                continue
+            outputs[name] = head(
                 embedding=outputs['embedding'],
                 attention_mask=attention_mask,
                 **kwargs

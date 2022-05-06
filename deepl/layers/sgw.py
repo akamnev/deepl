@@ -805,3 +805,305 @@ class Embeddings(nn.Module):
         embeddings = self.dropout_emb(embeddings, attention_mask)
 
         return workspace, embeddings
+
+
+class AutoRegressiveGlobalSelfAttention(nn.Module):
+    def __init__(
+        self,
+        hidden_size,
+        num_attention_heads
+    ):
+        super().__init__()
+        self.num_attention_heads = num_attention_heads
+        self.attention_head_size = hidden_size // num_attention_heads
+
+        self.all_head_size = self.num_attention_heads * self.attention_head_size
+
+        self.query_projection = nn.Linear(
+            hidden_size, self.all_head_size, bias=False
+        )
+        self.key_projection = nn.Linear(
+            hidden_size, self.all_head_size, bias=False
+        )
+        self.value_projection = nn.Linear(
+            hidden_size, self.all_head_size, bias=False
+        )
+        self.softmax = nn.Softmax(dim=-1)
+
+        self.dropout = VariationalNormalEpanechnikovDropout(
+            input_size=self.all_head_size
+        )
+        self.output_layer = nn.Linear(self.all_head_size, hidden_size)
+
+        self._value_tensor = None
+        self._score_tensor = None
+        self._proba_tensor = None
+        self._attention_mask_tensor = None
+
+    def transpose_for_scores(self, x):
+        new_x_shape = (
+            x.size()[0], x.size()[1], self.num_attention_heads,
+            self.attention_head_size
+        )
+        x = x.view(*new_x_shape)
+        return x.permute(0, 2, 1, 3)
+
+    def transpose_context(self, context):
+        context = context.permute(0, 2, 1, 3)
+        new_shape = context.size()[:-2] + (self.all_head_size, )
+        context = context.reshape(*new_shape)
+        return context
+
+    def _multi_head_attention(self, query, key, value, mask):
+        score = torch.matmul(query, key.transpose(-1, 2))
+        extended_mask = torch.ones_like(score, dtype=torch.bool)
+
+        extended_mask *= mask.unsqueeze(1).unsqueeze(1)
+        extended_mask *= mask.unsqueeze(-1).unsqueeze(1)
+
+        ones = torch.ones_like(score, dtype=torch.bool)
+        ma = torch.tril(ones, diagonal=0)
+        extended_mask *= ma
+
+        lv = torch.finfo(score.dtype).min
+        score = score + lv * (~extended_mask)
+
+        proba = self.softmax(score)
+        context = torch.matmul(proba, value)
+
+        if self.training:
+            self._score_tensor = score
+            self._proba_tensor = proba
+
+        return context, proba
+
+    def forward(
+        self,
+        hidden_states,
+        attention_mask
+    ):
+        if attention_mask.dtype != torch.bool:
+            attention_mask = attention_mask.to(dtype=torch.bool)
+
+        if self.training:
+            self._attention_mask_tensor = attention_mask
+
+        query = self.transpose_for_scores(self.query_projection(hidden_states))
+        key = self.transpose_for_scores(self.key_projection(hidden_states))
+        value = self.transpose_for_scores(self.value_projection(hidden_states))
+        context, proba = self._multi_head_attention(
+            query, key, value, attention_mask
+        )
+        context = self.transpose_context(context)
+        context = self.dropout(context, attention_mask)
+        output = self.output_layer(context)
+
+        if self.training:
+            self._value_tensor = value
+        return output, proba
+
+    def loss_value_unity(self):
+        loss = _loss_value_unity(
+            value=self._value_tensor,
+            mask=self._attention_mask_tensor
+        )
+        return loss
+
+    def loss_attention_entropy(self):
+        s = self._score_tensor - torch.logsumexp(self._score_tensor, dim=-1, keepdim=True)
+        p = self._proba_tensor
+        mask = self._attention_mask_tensor
+        mask = mask[:, None, :, None] * mask[:, None, None, :]
+        loss = p * s * mask
+        norm = torch.sum(self._attention_mask_tensor) * self.num_attention_heads
+        loss = torch.sum(loss) / norm
+        return loss
+
+
+class DecoderLayer(nn.Module):
+    def __init__(
+        self,
+        hidden_size,
+        encoder_hidden_size,
+        num_attention_heads,
+        intermediate_size,
+        hidden_act,
+        layer_norm_eps=1e-8,
+    ):
+        super().__init__()
+        self.layer_norm_self_attention = nn.LayerNorm(
+            hidden_size, eps=layer_norm_eps
+        )
+        self.self_attention = AutoRegressiveGlobalSelfAttention(
+            hidden_size=hidden_size,
+            num_attention_heads=num_attention_heads,
+        )
+        self.layer_norm_cross_attention = nn.LayerNorm(
+            hidden_size, eps=layer_norm_eps
+        )
+        self.cross_attention = GlobalCrossAttention(
+            hidden_size_out=hidden_size,
+            hidden_size_in=encoder_hidden_size,
+            num_attention_heads=num_attention_heads,
+            max_position=None
+        )
+        self.layer_norm_feedforward = nn.LayerNorm(
+            hidden_size, eps=layer_norm_eps
+        )
+        self.feedforward = FeedForward(
+            hidden_size=hidden_size,
+            intermediate_size=intermediate_size,
+            hidden_act=hidden_act
+        )
+
+    def forward(
+        self,
+        hidden_states,
+        attention_mask,
+        encoder_hidden_states,
+        encoder_attention_mask
+    ):
+        self_attention_output, proba_sa = self.self_attention(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+        )
+        hidden_states = hidden_states + self_attention_output
+        hidden_states = self.layer_norm_self_attention(hidden_states)
+
+        cross_attention_output, proba_ca, loss_value_ca = self.cross_attention(
+            hidden_states_in=encoder_hidden_states,
+            hidden_states_out=hidden_states,
+            attention_mask_in=encoder_attention_mask,
+            attention_mask_out=attention_mask
+        )
+
+        hidden_states = hidden_states + cross_attention_output
+        hidden_states = self.layer_norm_self_attention(hidden_states)
+
+        feedforward_output = self.feedforward(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask
+        )
+        hidden_states = hidden_states + feedforward_output
+        hidden_states = self.layer_norm_feedforward(hidden_states)
+
+        proba = (proba_sa, proba_ca)
+        regs = (loss_value_ca, )
+
+        return hidden_states, proba, regs
+
+
+class Decoder(nn.Module):
+    def __init__(
+        self,
+        num_hidden_layers,
+        encoder_hidden_size,
+        token_hidden_size,
+        num_attention_heads,
+        intermediate_size,
+        hidden_act='ReLU',
+        layer_norm_eps=1e-8
+    ):
+        super().__init__()
+        self.num_hidden_layers = num_hidden_layers
+        self.layer = nn.ModuleList([
+            DecoderLayer(
+                hidden_size=token_hidden_size,
+                encoder_hidden_size=encoder_hidden_size,
+                num_attention_heads=num_attention_heads,
+                intermediate_size=intermediate_size,
+                hidden_act=hidden_act,
+                layer_norm_eps=layer_norm_eps
+            )
+            for _ in range(num_hidden_layers)
+        ])
+
+    def forward(
+        self,
+        hidden_states,
+        attention_mask,
+        encoder_hidden_states,
+        encoder_attention_mask,
+        n_layer=None,
+        output_hidden_states=False,
+        output_proba=False,
+        output_regularisation=False
+    ):
+        all_hidden_states = []
+        all_proba_sa = []
+        all_proba_ca = []
+        all_loss_value_unity = []
+        if attention_mask.dtype != torch.bool:
+            attention_mask = attention_mask.to(dtype=torch.bool)
+
+        for n, layer_module in enumerate(self.layer):
+            if output_hidden_states:
+                all_hidden_states.append(hidden_states)
+
+            layer_outputs = layer_module(
+                hidden_states=hidden_states,
+                attention_mask=attention_mask,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_attention_mask
+            )
+            # hidden_states, proba, regs
+            hidden_states = layer_outputs[0]
+            if output_proba:
+                all_proba_sa.append(layer_outputs[1][0])
+                all_proba_ca.append(layer_outputs[1][1])
+            if output_regularisation:
+                all_loss_value_unity.append(layer_outputs[2][0])
+
+            if n_layer is not None and n + 1 >= n_layer:
+                break
+
+        # Add last layer
+        if output_hidden_states:
+            all_hidden_states.append(hidden_states)
+
+        outputs = [
+            hidden_states, None, None, None, None
+        ]
+
+        if output_hidden_states:
+            outputs[1] = all_hidden_states
+        if output_proba:
+            outputs[2] = all_proba_sa
+            outputs[3] = all_proba_ca
+        if output_regularisation:
+            outputs[4] = all_loss_value_unity
+
+        return outputs
+
+
+class DecoderEmbeddings(nn.Module):
+    def __init__(
+        self,
+        vocab_size,
+        hidden_size,
+        max_position
+    ):
+        super().__init__()
+
+        self.word_embeddings = nn.Embedding(
+            num_embeddings=vocab_size,
+            embedding_dim=hidden_size
+        )
+        self.position_embeddings = nn.Embedding(
+            num_embeddings=max_position,
+            embedding_dim=hidden_size
+        )
+        self.dropout = VariationalNormalEpanechnikovDropout(hidden_size)
+
+    def forward(
+        self,
+        input_ids,
+        position_ids,
+        attention_mask,
+    ):
+        emb_ids = self.word_embeddings(input_ids)
+        emb_pos = self.position_embeddings(position_ids)
+        embeddings = emb_ids + emb_pos
+        embeddings = self.dropout(embeddings, attention_mask)
+
+        return embeddings

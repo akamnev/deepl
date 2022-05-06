@@ -2,10 +2,12 @@ import pytest
 import random
 import torch
 from deepl.layers.sgw import LocalSelfAttention, SharedWorkSpace, \
-    EncoderLayer, Encoder, Embeddings
+    EncoderLayer, Encoder, Embeddings, AutoRegressiveGlobalSelfAttention, \
+    DecoderLayer, Decoder, DecoderEmbeddings
 from deepl.models.config import GatingKind, SGWEncoderConfig, \
-    SGWEmbeddingsConfig, SGWLanguageModelConfig, LanguageHeadConfig
-from deepl.models.sgw import SGWLanguageModel
+    SGWEmbeddingsConfig, SGWLanguageModelConfig, LanguageHeadConfig, \
+    SGWDecoderEmbeddingsConfig, SGWDecoderConfig
+from deepl.models.sgw import SGWLanguageModel, DecoderModel
 
 
 def create_example(
@@ -132,6 +134,23 @@ def test_local_self_attention(input_tensors):
     print(reg_2)
 
 
+def test_autoregressive_global_self_attention(input_tensors):
+    _, h, m, _, ws_hidden_size, hidden_size, head_number, layer_number, hw = input_tensors
+    obj = AutoRegressiveGlobalSelfAttention(
+        hidden_size=hidden_size,
+        num_attention_heads=head_number
+    )
+    output = obj(
+        hidden_states=h,
+        attention_mask=m
+    )
+    reg_1 = obj.loss_value_unity()
+    reg_2 = obj.loss_attention_entropy()
+    print(output)
+    print(reg_1)
+    print(reg_2)
+
+
 def test_workspace(input_tensors):
     ws, h, m, workspace_size, ws_hidden_size, hidden_size, head_number, _, hw = input_tensors
     obj = SharedWorkSpace(
@@ -184,6 +203,28 @@ def test_encoder_layer(input_tensors):
     print(output)
 
 
+def test_decoder_layer(input_tensors):
+    ws, h, m, workspace_size, ws_hidden_size, hidden_size, head_number, _, hw = input_tensors
+    m = torch.as_tensor(m, dtype=torch.bool)
+    enc_h = torch.randn((h.shape[0], 2 * h.shape[1], 2 * hidden_size))
+    enc_m = torch.ones((h.shape[0], 2 * h.shape[1]), dtype=torch.bool)
+    obj = DecoderLayer(
+        hidden_size=hidden_size,
+        encoder_hidden_size=2*hidden_size,
+        num_attention_heads=head_number,
+        intermediate_size=4*hidden_size,
+        hidden_act='ReLU',
+    )
+
+    output = obj(
+        hidden_states=h,
+        attention_mask=m,
+        encoder_hidden_states=enc_h,
+        encoder_attention_mask=enc_m
+    )
+    print(output)
+
+
 def test_encoder(input_tensors):
     ws, h, m, workspace_size, ws_hidden_size, hidden_size, head_number, layer_number, hw = input_tensors
     m = torch.as_tensor(m, dtype=torch.bool)
@@ -213,7 +254,34 @@ def test_encoder(input_tensors):
     print(output)
 
 
-def test_embedding(input_ids):
+def test_decoder(input_tensors):
+    ws, h, m, workspace_size, ws_hidden_size, hidden_size, head_number, layer_number, hw = input_tensors
+    m = torch.as_tensor(m, dtype=torch.bool)
+    encoder_hidden_size = 2 * hidden_size
+    enc_h = torch.randn((h.shape[0], 2 * h.shape[1], 2 * hidden_size))
+    enc_m = torch.ones((h.shape[0], 2 * h.shape[1]), dtype=torch.bool)
+    obj = Decoder(
+        num_hidden_layers=layer_number,
+        encoder_hidden_size=encoder_hidden_size,
+        token_hidden_size=hidden_size,
+        num_attention_heads=head_number,
+        intermediate_size=4*hidden_size
+    )
+
+    output = obj(
+        hidden_states=h,
+        attention_mask=m,
+        encoder_hidden_states=enc_h,
+        encoder_attention_mask=enc_m,
+        n_layer=None,
+        output_hidden_states=True,
+        output_proba=True,
+        output_regularisation=True
+    )
+    print(output)
+
+
+def test_encoder_embedding(input_ids):
     ids, m, workspace_size, vocab_size, ws_hidden_size, hidden_size, _, _, _, _ = input_ids
     obj = Embeddings(
         workspace_size=workspace_size,
@@ -224,6 +292,22 @@ def test_embedding(input_ids):
 
     output = obj(
         input_ids=ids,
+        attention_mask=m
+    )
+    print(output)
+
+
+def test_decoder_embedding(input_ids):
+    ids, m, workspace_size, vocab_size, ws_hidden_size, hidden_size, _, _, _, _ = input_ids
+    obj = DecoderEmbeddings(
+        vocab_size=vocab_size,
+        hidden_size=hidden_size,
+        max_position=512
+    )
+    pos_ids = torch.randint(0, 512, ids.shape)
+    output = obj(
+        input_ids=ids,
+        position_ids=pos_ids,
         attention_mask=m
     )
     print(output)
@@ -269,6 +353,56 @@ def test_language_model(input_ids):
     output = model(
         input_ids=ids,
         attention_mask=m,
+        n_layer=None,
+        output_hidden_states=False,
+        output_proba=True,
+        output_regularisation=True
+    )
+    print(output)
+
+
+def test_decoder_model(input_ids):
+    ids, m, workspace_size, vocab_size, ws_hidden_size, hidden_size, \
+        layer_number, head_number, hw, gating = input_ids
+    embeddings = SGWDecoderEmbeddingsConfig(
+        vocab_size=vocab_size,
+        hidden_size=hidden_size,
+        max_position=512
+    )
+    encoder_hidden_size = 2 * hidden_size
+    encoder = SGWDecoderConfig(
+        num_hidden_layers=layer_number,
+        encoder_hidden_size=encoder_hidden_size,
+        token_hidden_size=hidden_size,
+        num_attention_heads=head_number,
+        intermediate_size=4 * hidden_size,
+        hidden_act='leakyReLU',
+        layer_norm_eps=1e-8
+    )
+    lm_head = LanguageHeadConfig(
+        hidden_size=hidden_size,
+        hidden_act='ReLU',
+        vocab_size=vocab_size
+
+    )
+    config = SGWLanguageModelConfig(
+        embeddings=embeddings,
+        encoder=encoder,
+        heads={
+            'tokens': lm_head
+        }
+    )
+    model = DecoderModel(config=config)
+
+    enc_h = torch.randn((ids.shape[0], 2 * ids.shape[1], encoder_hidden_size))
+    enc_m = torch.ones((ids.shape[0], 2 * ids.shape[1]), dtype=torch.bool)
+    position_ids = torch.randint(0, 512, ids.shape)
+    output = model(
+        input_ids=ids,
+        position_ids=position_ids,
+        attention_mask=m,
+        encoder_hidden_states=enc_h,
+        encoder_attention_mask=enc_m,
         n_layer=None,
         output_hidden_states=False,
         output_proba=True,

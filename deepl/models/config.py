@@ -295,6 +295,18 @@ class SGWEmbeddingsConfig(ConfigBase):
         self.token_hidden_size = token_hidden_size
 
 
+class SGWDecoderEmbeddingsConfig(ConfigBase):
+    def __init__(
+        self,
+        vocab_size,
+        hidden_size,
+        max_position
+    ):
+        self.vocab_size = vocab_size
+        self.hidden_size = hidden_size
+        self.max_position = max_position
+
+
 class SGWEncoderConfig(ConfigBase):
     def __init__(
         self,
@@ -340,6 +352,26 @@ class SGWEncoderConfig(ConfigBase):
         return output
 
 
+class SGWDecoderConfig(ConfigBase):
+    def __init__(
+        self,
+        num_hidden_layers,
+        encoder_hidden_size,
+        token_hidden_size,
+        num_attention_heads,
+        intermediate_size,
+        hidden_act='ReLU',
+        layer_norm_eps=1e-8
+    ):
+        self.num_hidden_layers = num_hidden_layers
+        self.encoder_hidden_size = encoder_hidden_size
+        self.token_hidden_size = token_hidden_size
+        self.num_attention_heads = num_attention_heads
+        self.intermediate_size = intermediate_size
+        self.hidden_act = hidden_act
+        self.layer_norm_eps = layer_norm_eps
+
+
 class SGWLanguageModelConfig(ConfigBase):
     def __init__(
             self,
@@ -351,12 +383,20 @@ class SGWLanguageModelConfig(ConfigBase):
         if isinstance(embeddings, dict):
             embeddings = SGWEmbeddingsConfig.from_dict(embeddings)
         self.embeddings = embeddings
-        if not isinstance(self.embeddings, SGWEmbeddingsConfig):
+        if not isinstance(self.embeddings,
+                          (
+                              SGWEmbeddingsConfig,
+                              SGWDecoderEmbeddingsConfig
+                          )):
             raise ValueError(self.embeddings)
 
         if isinstance(encoder, dict):
             encoder = SGWEncoderConfig.from_dict(encoder)
-        if isinstance(encoder, SGWEncoderConfig):
+        if isinstance(encoder,
+                      (
+                          SGWEncoderConfig,
+                          SGWDecoderConfig
+                      )):
             self.encoder = encoder
         else:
             raise ValueError(encoder)
