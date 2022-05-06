@@ -287,14 +287,12 @@ class SGWEmbeddingsConfig(ConfigBase):
         workspace_size,
         vocab_size,
         workspace_hidden_size,
-        token_hidden_size,
-        max_position=None
+        token_hidden_size
     ):
         self.workspace_size = workspace_size
         self.vocab_size = vocab_size
         self.workspace_hidden_size = workspace_hidden_size
         self.token_hidden_size = token_hidden_size
-        self.max_position = max_position
 
 
 class SGWEncoderConfig(ConfigBase):

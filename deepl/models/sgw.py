@@ -14,8 +14,7 @@ class SGWLanguageModel(ModelBase):
             workspace_size=config.embeddings.workspace_size,
             vocab_size=config.embeddings.vocab_size,
             workspace_hidden_size=config.embeddings.workspace_hidden_size,
-            token_hidden_size=config.embeddings.token_hidden_size,
-            max_position=config.embeddings.max_position
+            token_hidden_size=config.embeddings.token_hidden_size
         )
         self.encoder = Encoder(
             workspace_size=config.encoder.workspace_size,
@@ -46,8 +45,7 @@ class SGWLanguageModel(ModelBase):
         workspace, embedding = self.embedding(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            avg_token_mix=kwargs.get('avg_token_mix', None),
-            normalize_mask=kwargs.get('normalize_mask', None),
+            avg_token_mix=kwargs.get('avg_token_mix', None)
         )
         outputs = self.encoder(
             workspace_states=workspace,

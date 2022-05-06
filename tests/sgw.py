@@ -115,7 +115,7 @@ def input_ids():
 
 
 def test_local_self_attention(input_tensors):
-    _, h, m, _, hidden_size, head_number, _, hw = input_tensors
+    _, h, m, _, ws_hidden_size, hidden_size, head_number, layer_number, hw = input_tensors
     obj = LocalSelfAttention(
         hidden_size=hidden_size,
         num_attention_heads=head_number,
@@ -215,24 +215,18 @@ def test_encoder(input_tensors):
 
 def test_embedding(input_ids):
     ids, m, workspace_size, vocab_size, ws_hidden_size, hidden_size, _, _, _, _ = input_ids
-    nm = torch.ones_like(m, dtype=torch.bool)
-    nm[0, 0] = False
     obj = Embeddings(
         workspace_size=workspace_size,
         vocab_size=vocab_size,
         workspace_hidden_size=ws_hidden_size,
         token_hidden_size=hidden_size,
-        max_position=512
     )
 
     output = obj(
         input_ids=ids,
-        attention_mask=m,
-        normalize_mask=nm
+        attention_mask=m
     )
-    loss = obj.loss_norm_emb()
     print(output)
-    print(loss)
 
 
 def test_language_model(input_ids):

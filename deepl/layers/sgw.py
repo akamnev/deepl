@@ -368,6 +368,7 @@ class GlobalCrossAttention(nn.Module):
         self.softmax = nn.Softmax(dim=-1)
 
         self.position_key = None
+        self.position_val = None
         if max_position is not None:
             position_shape = (
                 1,
@@ -376,12 +377,15 @@ class GlobalCrossAttention(nn.Module):
                 self.attention_head_size
             )
             self.position_key = nn.Parameter(torch.Tensor(*position_shape))
+            self.position_val = nn.Parameter(torch.Tensor(*position_shape))
 
         self.reset_parameters()
 
     def reset_parameters(self):
         if self.position_key is not None:
             nn.init.normal_(self.position_key)
+        if self.position_val is not None:
+            nn.init.normal_(self.position_val)
 
     def transpose_for_scores(self, x):
         new_x_shape = (
@@ -423,6 +427,7 @@ class GlobalCrossAttention(nn.Module):
         if self.position_key is not None:
             t = key.shape[-2]
             key = key + self.position_key[..., :t, :]
+            value = value + self.position_val[..., :t, :]
 
         context, proba = self._multi_head_attention(
             query, key, value, attention_mask_in
@@ -764,8 +769,7 @@ class Embeddings(nn.Module):
         workspace_size,
         vocab_size,
         workspace_hidden_size,
-        token_hidden_size,
-        max_position=None
+        token_hidden_size
     ):
         super().__init__()
         self.init_workspace = nn.Parameter(torch.Tensor(
@@ -776,20 +780,8 @@ class Embeddings(nn.Module):
             num_embeddings=vocab_size,
             embedding_dim=token_hidden_size
         )
-        self.position_embeddings = None
-        if max_position is not None:
-            self.position_embeddings = nn.Embedding(
-                num_embeddings=max_position,
-                embedding_dim=token_hidden_size
-            )
         self.dropout_ws = VariationalNormalEpanechnikovDropout(workspace_hidden_size)
         self.dropout_emb = VariationalNormalEpanechnikovDropout(token_hidden_size)
-
-        self.mean_emb = None
-        self.std_emb = None
-
-        self.mean_ws = None
-        self.std_ws = None
 
         self.reset_parameters()
 
@@ -800,8 +792,7 @@ class Embeddings(nn.Module):
             self,
             input_ids,
             attention_mask,
-            avg_token_mix=None,
-            normalize_mask=None
+            avg_token_mix=None
     ):
         bs = input_ids.shape[0]
         workspace = self.init_workspace.repeat([bs, 1, 1])
@@ -810,40 +801,7 @@ class Embeddings(nn.Module):
         if avg_token_mix is not None:
             embeddings = avg_token_mix @ embeddings
 
-        if self.position_embeddings is not None:
-            bs, nt = input_ids.shape
-            pos = torch.arange(0, nt, device=input_ids.device)
-            pos = pos.repeat(bs, 1)
-            pos_emb = self.position_embeddings(pos)
-            embeddings = embeddings + pos_emb
-
         workspace = self.dropout_ws(workspace)
         embeddings = self.dropout_emb(embeddings, attention_mask)
 
-        # workspace, embeddings = self.normalize_embedding(
-        #     workspace, embeddings, normalize_mask
-        # )
         return workspace, embeddings
-
-    def normalize_embedding(self, workspace, embeddings, normalize_mask=None):
-        """Данный метод необходим чтобы обнулить вектор соответствующий
-        токену <mask>"""
-
-        self.mean_ws = torch.mean(workspace, dim=-1, keepdim=True)
-        self.std_ws = torch.std(workspace, dim=-1, keepdim=True)
-
-        self.mean_emb = torch.mean(embeddings, dim=-1, keepdim=True)
-        self.std_emb = torch.std(embeddings, dim=-1, keepdim=True)
-
-        if normalize_mask is not None:
-            self.std_emb = self.std_emb + 1.0 * (~normalize_mask[..., None])
-
-        workspace = (workspace - self.mean_ws) / self.std_ws
-        embeddings = (embeddings - self.mean_emb) / self.std_emb
-
-        return workspace, embeddings
-
-    def loss_norm_emb(self):
-        reg_mean = torch.mean(self.mean_emb ** 2) + torch.mean(self.mean_ws ** 2)
-        reg_std = torch.mean((self.std_emb - 1.0) ** 2) + torch.mean((self.std_ws - 1.0) ** 2)
-        return reg_mean, reg_std
