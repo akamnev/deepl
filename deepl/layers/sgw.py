@@ -4,6 +4,7 @@ import torch.nn as nn
 from .dropout import VariationalNormalEpanechnikovDropout
 from .activations import get_activation
 from ..models.config import GatingKind
+from ..utils.init import gaussian_random_projection
 from torch.utils import checkpoint
 
 USE_CHECKPOINT = True
@@ -37,15 +38,18 @@ def _loss_value_unity(value, mask=None):
 
 class LocalSelfAttention(nn.Module):
     def __init__(
-            self,
-            hidden_size,
-            num_attention_heads,
-            attention_half_width
+        self,
+        hidden_size,
+        num_attention_heads,
+        attention_half_width,
+        scale=0.01
     ):
         super().__init__()
+        self.hidden_size = hidden_size
         self.num_attention_heads = num_attention_heads
         self.attention_head_size = hidden_size // num_attention_heads
         self.attention_half_width = attention_half_width
+        self.scale = scale
 
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
@@ -179,17 +183,33 @@ class LocalSelfAttention(nn.Module):
         loss = torch.sum(loss) / norm
         return loss
 
+    @torch.no_grad()
     def reset_parameters(self):
-        nn.init.normal_(self.position_query)
-        nn.init.normal_(self.position_key)
+        nn.init.normal_(self.position_query, std=self.scale)
+        nn.init.normal_(self.position_key, std=self.scale)
+
+        nn.init.orthogonal_(self.value_projection.weight)
+        self.output_layer.weight.data = self.value_projection.weight.clone().T
+
+        rp = torch.cat([
+            gaussian_random_projection(self.attention_head_size, self.hidden_size)
+            for _ in range(self.num_attention_heads)
+        ])
+        self.key_projection.weight.data = rp * self.scale
+
+        rp = torch.cat([
+            gaussian_random_projection(self.attention_head_size, self.hidden_size)
+            for _ in range(self.num_attention_heads)
+        ])
+        self.query_projection.weight.data = rp * self.scale
 
 
 class FeedForward(nn.Module):
     def __init__(
-            self,
-            hidden_size,
-            intermediate_size,
-            hidden_act
+        self,
+        hidden_size,
+        intermediate_size,
+        hidden_act
     ):
         super().__init__()
         self.dense_input = nn.Linear(hidden_size, intermediate_size)
@@ -340,13 +360,17 @@ def get_gating(gating, hidden_size):
 
 class GlobalCrossAttention(nn.Module):
     def __init__(
-            self,
-            hidden_size_out,
-            hidden_size_in,
-            num_attention_heads,
-            max_position=None
+        self,
+        hidden_size_out,
+        hidden_size_in,
+        num_attention_heads,
+        max_position=None,
+        scale=0.01
     ):
         super().__init__()
+        self.scale = scale
+        self.hidden_size_out = hidden_size_out
+        self.hidden_size_in = hidden_size_in
         self.num_attention_heads = num_attention_heads
         self.attention_head_size = hidden_size_out // num_attention_heads
         self.all_head_size = self.num_attention_heads * self.attention_head_size
@@ -381,11 +405,27 @@ class GlobalCrossAttention(nn.Module):
 
         self.reset_parameters()
 
+    @torch.no_grad()
     def reset_parameters(self):
         if self.position_key is not None:
-            nn.init.normal_(self.position_key)
+            nn.init.normal_(self.position_key, std=self.scale)
         if self.position_val is not None:
-            nn.init.normal_(self.position_val)
+            nn.init.normal_(self.position_val, std=1.0)
+
+        nn.init.orthogonal_(self.value.weight.data)
+        nn.init.orthogonal_(self.output_layer.weight.data)
+
+        rp = torch.cat([
+            gaussian_random_projection(self.attention_head_size, self.hidden_size_in)
+            for _ in range(self.num_attention_heads)
+        ])
+        self.key.weight.data = rp * self.scale
+
+        rp = torch.cat([
+            gaussian_random_projection(self.attention_head_size, self.hidden_size_out)
+            for _ in range(self.num_attention_heads)
+        ])
+        self.query.weight.data = rp * self.scale
 
     def transpose_for_scores(self, x):
         new_x_shape = (
@@ -460,6 +500,10 @@ class VectorGlobalCrossAttention(nn.Module):
             input_size=hidden_size_out
         )
 
+    @torch.no_grad()
+    def reset_parameters(self):
+        nn.init.orthogonal_(self.value.weight.data)
+
     def forward(
             self,
             hidden_states_out,
@@ -477,16 +521,17 @@ class VectorGlobalCrossAttention(nn.Module):
 
 class SharedWorkSpace(nn.Module):
     def __init__(
-            self,
-            workspace_size,
-            workspace_hidden_size,
-            token_hidden_size,
-            num_workspace_attention_heads,
-            num_token_attention_heads,
-            gating_h2m,
-            gating_m2h,
-            max_position=None,
-            layer_norm_eps=1e-8
+        self,
+        workspace_size,
+        workspace_hidden_size,
+        token_hidden_size,
+        num_workspace_attention_heads,
+        num_token_attention_heads,
+        gating_h2m,
+        gating_m2h,
+        max_position=None,
+        attention_scale=0.01,
+        layer_norm_eps=1e-8
     ):
         super().__init__()
 
@@ -494,7 +539,8 @@ class SharedWorkSpace(nn.Module):
             hidden_size_out=workspace_hidden_size,
             hidden_size_in=token_hidden_size,
             num_attention_heads=num_workspace_attention_heads,
-            max_position=max_position
+            max_position=max_position,
+            scale=attention_scale
         )
 
         if workspace_size > 1:
@@ -502,7 +548,8 @@ class SharedWorkSpace(nn.Module):
                 hidden_size_out=token_hidden_size,
                 hidden_size_in=workspace_hidden_size,
                 num_attention_heads=num_token_attention_heads,
-                max_position=None
+                max_position=None,
+                scale=attention_scale
             )
         else:
             self.global_attention_m2h = VectorGlobalCrossAttention(
@@ -578,6 +625,7 @@ class EncoderLayer(nn.Module):
         attention_half_width,
         hidden_act,
         shared_work_space_unit,
+        attention_scale=0.01,
         layer_norm_eps=1e-8,
         use_local_self_attention=True
     ):
@@ -591,7 +639,8 @@ class EncoderLayer(nn.Module):
             self.local_self_attention = LocalSelfAttention(
                 hidden_size=hidden_size,
                 num_attention_heads=num_attention_heads,
-                attention_half_width=attention_half_width
+                attention_half_width=attention_half_width,
+                scale=attention_scale
             )
         self.shared_work_space_unit = shared_work_space_unit
 
@@ -658,6 +707,7 @@ class Encoder(nn.Module):
         gating_h2m=GatingKind.NONE,
         gating_m2h=GatingKind.NONE,
         max_position=None,
+        attention_scale=0.01,
         layer_norm_eps=1e-8,
         use_local_self_attention=True
     ):
@@ -671,7 +721,9 @@ class Encoder(nn.Module):
             num_token_attention_heads=num_token_attention_heads,
             gating_h2m=gating_h2m,
             gating_m2h=gating_m2h,
-            max_position=max_position
+            max_position=max_position,
+            attention_scale=attention_scale,
+            layer_norm_eps=layer_norm_eps
         )
         self.layer = nn.ModuleList([
             EncoderLayer(
@@ -681,6 +733,7 @@ class Encoder(nn.Module):
                 attention_half_width=attention_half_width,
                 hidden_act=hidden_act,
                 shared_work_space_unit=shared_work_space_unit,
+                attention_scale=attention_scale,
                 layer_norm_eps=layer_norm_eps,
                 use_local_self_attention=use_local_self_attention
             )
@@ -785,8 +838,13 @@ class Embeddings(nn.Module):
 
         self.reset_parameters()
 
+    @torch.no_grad()
     def reset_parameters(self):
         nn.init.normal_(self.init_workspace)
+        d = self.init_workspace.data
+        d /= torch.std(d, dim=-1, keepdim=True)
+        b = self.word_embeddings.weight.data
+        b /= torch.std(b, dim=-1, keepdim=True)
 
     def forward(
             self,
@@ -1095,6 +1153,8 @@ class DecoderEmbeddings(nn.Module):
         )
         self.dropout = VariationalNormalEpanechnikovDropout(hidden_size)
 
+        self.reset_parameters()
+
     def forward(
         self,
         input_ids,
@@ -1107,3 +1167,11 @@ class DecoderEmbeddings(nn.Module):
         embeddings = self.dropout(embeddings, attention_mask)
 
         return embeddings
+
+    @torch.no_grad()
+    def reset_parameters(self):
+        b = self.word_embeddings.weight.data
+        b /= torch.std(b, dim=-1, keepdim=True)
+        d = self.position_embeddings.weight.data
+        d /= torch.std(d, dim=-1, keepdim=True)
+

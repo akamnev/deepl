@@ -113,7 +113,7 @@ class VariationalNormalEpanechnikovDropout(VariationalBase):
     def __init__(self, input_size, momentum=0.99, eps=1e-8):
         super().__init__(input_size, momentum=momentum, eps=eps)
         self.log_sigma = nn.Parameter(torch.Tensor(input_size))
-        self.log_sigma.data.fill_(-1.0)
+        self.log_sigma.data.fill_(-10.0)
         self._mean = None
         self._const = 0.5*math.log(90.0*math.pi) - 7./6.
         self._shift = 0.5*math.log(5.0)

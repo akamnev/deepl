@@ -1,6 +1,6 @@
 import torch
 from .base import ModelBase
-from .config import SGWLanguageModelConfig
+from .config import SGWLanguageModelConfig, SGWDecoderModelConfig
 from ..layers.sgw import Embeddings, Encoder, Decoder, DecoderEmbeddings
 from ..layers.headers import get_head_by_config
 
@@ -29,6 +29,7 @@ class SGWLanguageModel(ModelBase):
             gating_h2m=config.encoder.gating_h2m,
             gating_m2h=config.encoder.gating_m2h,
             max_position=config.encoder.max_position,
+            attention_scale=config.encoder.attention_scale,
             layer_norm_eps=config.encoder.layer_norm_eps,
             use_local_self_attention=config.encoder.use_local_self_attention
         )
@@ -84,9 +85,9 @@ class SGWLanguageModel(ModelBase):
 
 
 class DecoderModel(ModelBase):
-    config_cls = SGWLanguageModelConfig
+    config_cls = SGWDecoderModelConfig
 
-    def __init__(self, config: SGWLanguageModelConfig):
+    def __init__(self, config: SGWDecoderModelConfig):
         super().__init__(config)
         self.embedding = DecoderEmbeddings(
             vocab_size=config.embeddings.vocab_size,

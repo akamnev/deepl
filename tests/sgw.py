@@ -3,10 +3,11 @@ import random
 import torch
 from deepl.layers.sgw import LocalSelfAttention, SharedWorkSpace, \
     EncoderLayer, Encoder, Embeddings, AutoRegressiveGlobalSelfAttention, \
-    DecoderLayer, Decoder, DecoderEmbeddings
+    DecoderLayer, Decoder, DecoderEmbeddings, GlobalCrossAttention
 from deepl.models.config import GatingKind, SGWEncoderConfig, \
     SGWEmbeddingsConfig, SGWLanguageModelConfig, LanguageHeadConfig, \
-    SGWDecoderEmbeddingsConfig, SGWDecoderConfig
+    SGWDecoderEmbeddingsConfig, SGWDecoderConfig, SGWDecoderModelConfig, \
+    LanguageHeadSmallConfig
 from deepl.models.sgw import SGWLanguageModel, DecoderModel
 
 
@@ -134,6 +135,49 @@ def test_local_self_attention(input_tensors):
     print(reg_2)
 
 
+def test_init_orth_local_self_attention(input_tensors):
+    _, h, m, _, ws_hidden_size, hidden_size, head_number, layer_number, hw = input_tensors
+    obj = LocalSelfAttention(
+        hidden_size=hidden_size,
+        num_attention_heads=head_number,
+        attention_half_width=hw,
+    )
+
+    vw = obj.output_layer.weight @ obj.value_projection.weight
+    dvw = torch.diag(vw)
+    m = torch.eye(vw.shape[0], dtype=torch.bool)
+    ovw = vw[~m]
+
+    assert torch.all(torch.isclose(dvw, torch.tensor(1.0)))
+    assert torch.all(torch.isclose(ovw, torch.tensor(0.0), atol=1e-5))
+
+    obj.output_layer.weight.data += 2.0
+
+    assert not torch.any(torch.isclose(obj.value_projection.weight, obj.output_layer.weight.T))
+
+
+def test_init_rand_proj_local_self_attention(input_tensors):
+    _, h, m, _, ws_hidden_size, hidden_size, head_number, layer_number, hw = input_tensors
+    scale = 0.01
+    obj = LocalSelfAttention(
+        hidden_size=hidden_size,
+        num_attention_heads=head_number,
+        attention_half_width=hw,
+        scale=scale
+    )
+    rp = obj.query_projection.weight.data
+    norm = torch.norm(rp, dim=-1)
+    s = rp @ rp.T
+    assert torch.all(torch.isclose(norm, torch.tensor(scale)))
+    assert torch.all(torch.isclose(torch.diag(s), torch.tensor(scale ** 2)))
+
+    rp = obj.key_projection.weight.data
+    norm = torch.norm(rp, dim=-1)
+    s = rp @ rp.T
+    assert torch.all(torch.isclose(norm, torch.tensor(scale)))
+    assert torch.all(torch.isclose(torch.diag(s), torch.tensor(scale ** 2)))
+
+
 def test_autoregressive_global_self_attention(input_tensors):
     _, h, m, _, ws_hidden_size, hidden_size, head_number, layer_number, hw = input_tensors
     obj = AutoRegressiveGlobalSelfAttention(
@@ -170,6 +214,34 @@ def test_workspace(input_tensors):
         attention_mask=m
     )
     print(output)
+
+
+def test_init_global_attention(input_tensors):
+    ws, h, m, workspace_size, ws_hidden_size, hidden_size, head_number, _, hw = input_tensors
+    obj = GlobalCrossAttention(
+        hidden_size_out=ws_hidden_size,
+        hidden_size_in=hidden_size,
+        num_attention_heads=head_number,
+        max_position=512,
+        scale=0.01
+    )
+
+    vw = obj.value.weight.T @ obj.value.weight
+    dvw = torch.diag(vw)
+    m = torch.eye(vw.shape[0], dtype=torch.bool)
+    ovw = vw[~m]
+
+    assert torch.all(torch.isclose(dvw, torch.tensor(1.0)))
+    assert torch.all(torch.isclose(ovw, torch.tensor(0.0), atol=1e-5))
+
+    vw = obj.output_layer.weight.T @ obj.output_layer.weight
+    dvw = torch.diag(vw)
+    m = torch.eye(vw.shape[0], dtype=torch.bool)
+    ovw = vw[~m]
+
+    assert torch.all(torch.isclose(dvw, torch.tensor(1.0)))
+    assert torch.all(torch.isclose(ovw, torch.tensor(0.0), atol=1e-5))
+
 
 
 def test_encoder_layer(input_tensors):
@@ -297,6 +369,20 @@ def test_encoder_embedding(input_ids):
     print(output)
 
 
+def test_init_encoder_embedding(input_ids):
+    ids, m, workspace_size, vocab_size, ws_hidden_size, hidden_size, _, _, _, _ = input_ids
+    obj = Embeddings(
+        workspace_size=workspace_size,
+        vocab_size=vocab_size,
+        workspace_hidden_size=ws_hidden_size,
+        token_hidden_size=hidden_size,
+    )
+    std_we = torch.std(obj.word_embeddings.weight, dim=-1, keepdim=True)
+    std_ws = torch.std(obj.init_workspace, dim=-1, keepdim=True)
+    assert torch.all(torch.isclose(std_ws, torch.tensor(1.0)))
+    assert torch.all(torch.isclose(std_we, torch.tensor(1.0)))
+
+
 def test_decoder_embedding(input_ids):
     ids, m, workspace_size, vocab_size, ws_hidden_size, hidden_size, _, _, _, _ = input_ids
     obj = DecoderEmbeddings(
@@ -311,6 +397,19 @@ def test_decoder_embedding(input_ids):
         attention_mask=m
     )
     print(output)
+
+
+def test_init_decoder_embedding(input_ids):
+    ids, m, workspace_size, vocab_size, ws_hidden_size, hidden_size, _, _, _, _ = input_ids
+    obj = DecoderEmbeddings(
+        vocab_size=vocab_size,
+        hidden_size=hidden_size,
+        max_position=512
+    )
+    std_we = torch.std(obj.word_embeddings.weight, dim=-1, keepdim=True)
+    std_ps = torch.std(obj.position_embeddings.weight, dim=-1, keepdim=True)
+    assert torch.all(torch.isclose(std_we, torch.tensor(1.0)))
+    assert torch.all(torch.isclose(std_ps, torch.tensor(1.0)))
 
 
 def test_language_model(input_ids):
@@ -379,13 +478,11 @@ def test_decoder_model(input_ids):
         hidden_act='leakyReLU',
         layer_norm_eps=1e-8
     )
-    lm_head = LanguageHeadConfig(
+    lm_head = LanguageHeadSmallConfig(
         hidden_size=hidden_size,
-        hidden_act='ReLU',
         vocab_size=vocab_size
-
     )
-    config = SGWLanguageModelConfig(
+    config = SGWDecoderModelConfig(
         embeddings=embeddings,
         encoder=encoder,
         heads={

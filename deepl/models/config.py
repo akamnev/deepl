@@ -178,26 +178,44 @@ class HeadConfigBase(ConfigBase):
 
 class LanguageHeadConfig(HeadConfigBase):
     def __init__(
-            self,
-            hidden_size,
-            hidden_act,
-            vocab_size
+        self,
+        hidden_size,
+        hidden_act,
+        vocab_size,
+        scale=0.1
     ):
         self.hidden_size = hidden_size
         self.hidden_act = hidden_act
         self.vocab_size = vocab_size
+        self.scale = scale
+
+
+class LanguageHeadSmallConfig(HeadConfigBase):
+    def __init__(
+        self,
+        hidden_size,
+        vocab_size,
+        scale=0.1
+    ):
+        self.hidden_size = hidden_size
+        self.vocab_size = vocab_size
+        self.scale = scale
 
 
 class LanguageHeadLNConfig(HeadConfigBase):
-    def __init__(self,
-                 hidden_size,
-                 hidden_act,
-                 vocab_size,
-                 layer_norm_eps):
+    def __init__(
+        self,
+        hidden_size,
+        hidden_act,
+        vocab_size,
+        layer_norm_eps,
+        scale=0.1
+    ):
         self.hidden_size = hidden_size
         self.hidden_act = hidden_act
         self.vocab_size = vocab_size
         self.layer_norm_eps = layer_norm_eps
+        self.scale = scale
 
 
 class VectorMeanHeadConfig(HeadConfigBase):
@@ -322,6 +340,7 @@ class SGWEncoderConfig(ConfigBase):
         gating_h2m=GatingKind.NONE,
         gating_m2h=GatingKind.NONE,
         max_position=None,
+        attention_scale=0.01,
         layer_norm_eps=1e-8,
         use_local_self_attention=True
     ):
@@ -337,6 +356,7 @@ class SGWEncoderConfig(ConfigBase):
         self.gating_h2m = gating_h2m
         self.gating_m2h = gating_m2h
         self.max_position = max_position
+        self.attention_scale = attention_scale
         self.layer_norm_eps = layer_norm_eps
         self.use_local_self_attention = use_local_self_attention
 
@@ -383,20 +403,12 @@ class SGWLanguageModelConfig(ConfigBase):
         if isinstance(embeddings, dict):
             embeddings = SGWEmbeddingsConfig.from_dict(embeddings)
         self.embeddings = embeddings
-        if not isinstance(self.embeddings,
-                          (
-                              SGWEmbeddingsConfig,
-                              SGWDecoderEmbeddingsConfig
-                          )):
+        if not isinstance(self.embeddings, SGWEmbeddingsConfig):
             raise ValueError(self.embeddings)
 
         if isinstance(encoder, dict):
             encoder = SGWEncoderConfig.from_dict(encoder)
-        if isinstance(encoder,
-                      (
-                          SGWEncoderConfig,
-                          SGWDecoderConfig
-                      )):
+        if isinstance(encoder, SGWEncoderConfig):
             self.encoder = encoder
         else:
             raise ValueError(encoder)
@@ -406,6 +418,7 @@ class SGWLanguageModelConfig(ConfigBase):
         for name, head in heads.items():
             if isinstance(head, dict):
                 for cls in (LanguageHeadConfig,
+                            LanguageHeadSmallConfig,
                             LanguageHeadLNConfig,
                             LinRegHeadConfig,
                             VectorMeanHeadConfig,
@@ -415,11 +428,56 @@ class SGWLanguageModelConfig(ConfigBase):
                         head = cls.from_dict(head)
                         break
             if not isinstance(head, (LanguageHeadConfig,
+                                     LanguageHeadSmallConfig,
                                      LanguageHeadLNConfig,
                                      LinRegHeadConfig,
                                      VectorMeanHeadConfig,
                                      VectorMeanLNHeadConfig,
                                      VectorMaxHeadConfig)):
+                raise ValueError(head)
+            self.heads[name] = head
+
+    def to_dict(self):
+        outputs = {
+            'embeddings': self.embeddings.to_dict(),
+            'encoder': self.encoder.to_dict(),
+            'heads': {k: h.to_dict() for k, h in self.heads.items()}
+        }
+        return outputs
+
+
+class SGWDecoderModelConfig(ConfigBase):
+    def __init__(
+            self,
+            embeddings,
+            encoder,
+            heads=None
+    ):
+
+        if isinstance(embeddings, dict):
+            embeddings = SGWDecoderEmbeddingsConfig.from_dict(embeddings)
+        self.embeddings = embeddings
+        if not isinstance(self.embeddings, SGWDecoderEmbeddingsConfig):
+            raise ValueError(self.embeddings)
+
+        if isinstance(encoder, dict):
+            encoder = SGWDecoderConfig.from_dict(encoder)
+        if isinstance(encoder, SGWDecoderConfig):
+            self.encoder = encoder
+        else:
+            raise ValueError(encoder)
+
+        self.heads = {}
+        heads = heads if heads is not None else dict()
+        for name, head in heads.items():
+            if isinstance(head, dict):
+                for cls in (LanguageHeadConfig,
+                            LanguageHeadSmallConfig):
+                    if head['class_name'] == cls.__name__:
+                        head = cls.from_dict(head)
+                        break
+            if not isinstance(head, (LanguageHeadConfig,
+                                     LanguageHeadSmallConfig)):
                 raise ValueError(head)
             self.heads[name] = head
 
